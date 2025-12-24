@@ -38,6 +38,7 @@ const CATEGORY_OPTIONS = [
 // Using the strict type for Row, but allowing partials for UI
 type Transaction = Database['public']['Tables']['transactions']['Row'];
 type TransactionUpdate = Database['public']['Tables']['transactions']['Update'];
+type EditableField = 'description' | 'category' | 'amount';
 
 interface TransactionTableProps {
     initialData?: Transaction[];
@@ -54,7 +55,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
     }, [initialData]);
 
     // Update local state when cell is edited
-    const updateData = (rowIndex: number, columnId: keyof TransactionUpdate, value: any) => {
+    const updateData = (rowIndex: number, columnId: EditableField, value: any) => {
         setData((old) =>
             old.map((row, index) => {
                 if (index === rowIndex) {
@@ -66,8 +67,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                     // Fire and forget update to DB
                     // In real app, we'd handle loading/error states
                     if (row.id) {
-                        // Cast to the generated Update type to satisfy Supabase typings
-                        const updates = { [columnId]: value } as TransactionUpdate;
+                        const updates: Partial<TransactionUpdate> = { [columnId]: value } as any;
                         supabase.from('transactions').update(updates).eq('id', row.id).then(({ error }) => {
                             if (error) console.error("Update failed", error);
                         });
@@ -103,7 +103,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                 cell: ({ getValue, row, column }) => (
                     <EditableCell
                         value={getValue() as string}
-                        onSave={(val) => updateData(row.index, column.id, val)}
+                        onSave={(val) => updateData(row.index, column.id as EditableField, val)}
                     />
                 ),
             },
@@ -115,7 +115,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                         value={getValue() as string}
                         type="select"
                         options={CATEGORY_OPTIONS}
-                        onSave={(val) => updateData(row.index, column.id, val)}
+                        onSave={(val) => updateData(row.index, column.id as EditableField, val)}
                     />
                 ),
             },
@@ -140,7 +140,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                             <EditableCell
                                 value={Math.abs(amount)} // Show positive for editing, color indicates sign
                                 type="currency"
-                                onSave={(val) => updateData(row.index, column.id, isExpense ? -Math.abs(Number(val)) : Math.abs(Number(val)))}
+                                onSave={(val) => updateData(row.index, column.id as EditableField, isExpense ? -Math.abs(Number(val)) : Math.abs(Number(val)))}
                             />
                         </div>
                     )
