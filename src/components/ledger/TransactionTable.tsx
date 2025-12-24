@@ -54,6 +54,17 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
         setData(initialData);
     }, [initialData]);
 
+    const persistUpdate = (rowId: string, columnId: EditableField, value: any) => {
+        const updates: Partial<TransactionUpdate> = {};
+        if (columnId === 'description') updates.description = String(value);
+        if (columnId === 'category') updates.category = String(value);
+        if (columnId === 'amount') updates.amount = Number(value);
+
+        supabase.from('transactions').update(updates).eq('id', rowId).then(({ error }) => {
+            if (error) console.error("Update failed", error);
+        });
+    };
+
     // Update local state when cell is edited
     const updateData = (rowIndex: number, columnId: EditableField, value: any) => {
         setData((old) =>
@@ -67,12 +78,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                     // Fire and forget update to DB
                     // In real app, we'd handle loading/error states
                     if (row.id) {
-                        const updates: Partial<TransactionUpdate> = { [columnId]: value } as any;
-                        // TypeScript struggles with computed keys here; ignore to allow runtime update
-                        // @ts-ignore
-                        supabase.from('transactions').update(updates).eq('id', row.id).then(({ error }) => {
-                            if (error) console.error("Update failed", error);
-                        });
+                        persistUpdate(row.id, columnId, value);
                     }
 
                     return updated;
