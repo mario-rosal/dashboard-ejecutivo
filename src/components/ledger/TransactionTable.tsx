@@ -54,7 +54,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
     }, [initialData]);
 
     // Update local state when cell is edited
-    const updateData = (rowIndex: number, columnId: keyof Transaction, value: any) => {
+    const updateData = (rowIndex: number, columnId: keyof TransactionUpdate, value: any) => {
         setData((old) =>
             old.map((row, index) => {
                 if (index === rowIndex) {
@@ -66,6 +66,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                     // Fire and forget update to DB
                     // In real app, we'd handle loading/error states
                     if (row.id) {
+                        // Cast to the generated Update type to satisfy Supabase typings
                         const updates = { [columnId]: value } as TransactionUpdate;
                         supabase.from('transactions').update(updates).eq('id', row.id).then(({ error }) => {
                             if (error) console.error("Update failed", error);
