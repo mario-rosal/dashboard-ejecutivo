@@ -1,26 +1,109 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+  --color-glass-surface: rgba(255, 255, 255, 0.05);
+  --color-glass-surface-hover: rgba(255, 255, 255, 0.08);
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --animate-fade-in: fade-in 0.5s ease-out;
+  --animate-slide-up: slide-up 0.5s ease-out;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
   }
 }
 
+:root {
+  /* Reference Palette & Variables */
+  --bg-dark: #0f172a;
+  /* Slate 900 */
+  --glass-bg: rgba(30, 41, 59, 0.7);
+  /* Slate 800 with opacity */
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --primary: #3b82f6;
+  /* Blue 500 */
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-dark);
+  background-image: radial-gradient(at top right, #1e1b4b 0%, #0f172a 60%);
+  color: #f8fafc;
+  /* Slate 50 */
+  font-family: var(--font-sans), sans-serif;
+  min-height: 100vh;
+}
+
+/* Glass Utility Classes matching reference */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+  border-radius: 1rem;
+  /* rounded-2xl roughly */
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+}
+
+.glass-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.glass-table th {
+  text-align: left;
+  padding: 1rem;
+  color: #94a3b8;
+  /* Slate 400 */
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-table td {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  font-size: 0.875rem;
+}
+
+.glass-table tr:hover td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  /* Slate 700 */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
 }
