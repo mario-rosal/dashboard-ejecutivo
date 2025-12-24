@@ -37,6 +37,7 @@ const CATEGORY_OPTIONS = [
 
 // Using the strict type for Row, but allowing partials for UI
 type Transaction = Database['public']['Tables']['transactions']['Row'];
+type TransactionUpdate = Database['public']['Tables']['transactions']['Update'];
 
 interface TransactionTableProps {
     initialData?: Transaction[];
@@ -65,7 +66,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                     // Fire and forget update to DB
                     // In real app, we'd handle loading/error states
                     if (row.id) {
-                        const updates: Partial<Transaction> = { [columnId]: value };
+                        const updates = { [columnId]: value } as TransactionUpdate;
                         supabase.from('transactions').update(updates).eq('id', row.id).then(({ error }) => {
                             if (error) console.error("Update failed", error);
                         });
