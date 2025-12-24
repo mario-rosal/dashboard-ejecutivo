@@ -68,6 +68,8 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                     // In real app, we'd handle loading/error states
                     if (row.id) {
                         const updates: Partial<TransactionUpdate> = { [columnId]: value } as any;
+                        // TypeScript struggles with computed keys here; ignore to allow runtime update
+                        // @ts-ignore
                         supabase.from('transactions').update(updates).eq('id', row.id).then(({ error }) => {
                             if (error) console.error("Update failed", error);
                         });
