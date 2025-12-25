@@ -32,27 +32,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Falta N8N_INGEST_BEARER' }, { status: 500 });
   }
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
+        getAll() {
+          return cookieStore.getAll();
         },
-        set(name: string, value: string, options: Parameters<typeof cookieStore.set>[1]) {
+        setAll(cookies) {
           try {
-            cookieStore.set({ name, value, ...options });
+            cookies.forEach(({ name, value, options }) => {
+              cookieStore.set({ name, value, ...options });
+            });
           } catch {
             // ignore cookie set failures
-          }
-        },
-        remove(name: string, options: Parameters<typeof cookieStore.set>[1]) {
-          try {
-            cookieStore.set({ name, value: '', ...options });
-          } catch {
-            // ignore cookie removal failures
           }
         },
       },
