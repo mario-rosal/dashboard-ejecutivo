@@ -37,15 +37,17 @@ export async function POST(request: Request) {
 
   try {
     ensurePdf(file);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Archivo inválido' }, { status: 400 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Archivo invalido';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 
   let callbackUrl: string;
   try {
     callbackUrl = buildCallbackUrl(request);
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'No se pudo construir callbackUrl' }, { status: 500 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'No se pudo construir callbackUrl';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   const outbound = new FormData();

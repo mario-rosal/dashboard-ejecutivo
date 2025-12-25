@@ -31,6 +31,7 @@ export interface Database {
                     full_name?: string | null
                     avatar_url?: string | null
                 }
+                Relationships: []
             }
             transactions: {
                 Row: {
@@ -72,6 +73,7 @@ export interface Database {
                     file_source_id?: string | null
                     is_anomaly?: boolean
                 }
+                Relationships: []
             }
             forecast_settings: {
                 Row: {
@@ -92,7 +94,20 @@ export interface Database {
                     safety_margin_percent?: number
                     updated_at?: string
                 }
+                Relationships: []
             }
+        }
+        Views: {
+            [_ in never]: never
+        }
+        Functions: {
+            [_ in never]: never
+        }
+        Enums: {
+            [_ in never]: never
+        }
+        CompositeTypes: {
+            [_ in never]: never
         }
     }
 }

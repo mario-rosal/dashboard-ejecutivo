@@ -4,9 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { GlassCard } from '@/components/ui/GlassCard';
-import { GlassButton } from '@/components/ui/GlassButton';
 import { Loader2, Lock, Mail, ChevronRight, AlertCircle, BarChart4 } from 'lucide-react';
-import Link from 'next/link';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -40,8 +38,9 @@ export default function LoginPage() {
                 router.push('/');
                 router.refresh();
             }
-        } catch (err: any) {
-            setError(err.message);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Error al autenticar';
+            setError(message);
         } finally {
             setIsLoading(false);
         }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
     ColumnDef,
     getCoreRowModel,
@@ -38,14 +38,22 @@ const CATEGORY_OPTIONS = [
 // Using the strict type for Row, but allowing partials for UI
 type Transaction = Database['public']['Tables']['transactions']['Row'];
 type TransactionUpdate = Database['public']['Tables']['transactions']['Update'];
-type EditableField = 'description' | 'category' | 'amount';
+type TransactionRow = Transaction & { is_anomaly?: boolean };
+
+type EditableFieldValueMap = {
+    description: string;
+    category: string;
+    amount: number;
+};
+
+type EditableField = keyof EditableFieldValueMap;
 
 interface TransactionTableProps {
-    initialData?: Transaction[];
+    initialData?: TransactionRow[];
 }
 
 export function TransactionTable({ initialData = [] }: TransactionTableProps) {
-    const [data, setData] = useState<Transaction[]>(initialData);
+    const [data, setData] = useState<TransactionRow[]>(initialData);
     const [sorting, setSorting] = useState<SortingState>([]);
     const [globalFilter, setGlobalFilter] = useState('');
 
@@ -54,41 +62,51 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
         setData(initialData);
     }, [initialData]);
 
-    const persistUpdate = (rowId: string, columnId: EditableField, value: any) => {
-        const updates: Partial<TransactionUpdate> = {};
-        if (columnId === 'description') updates.description = String(value);
-        if (columnId === 'category') updates.category = String(value);
-        if (columnId === 'amount') updates.amount = Number(value);
+    const persistUpdate = useCallback(
+        <T extends EditableField>(rowId: string, columnId: T, value: EditableFieldValueMap[T]) => {
+            const updates: Partial<TransactionUpdate> = {};
+            if (columnId === 'description') updates.description = String(value);
+            if (columnId === 'category') updates.category = String(value);
+            if (columnId === 'amount') updates.amount = Number(value);
 
-        supabase.from('transactions').update(updates).eq('id', rowId).then(({ error }) => {
-            if (error) console.error("Update failed", error);
-        });
-    };
+            supabase
+                .from('transactions')
+                .update(updates)
+                .eq('id', rowId)
+                .then(({ error }) => {
+                    if (error) console.error("Update failed", error);
+                });
+        },
+        []
+    );
 
     // Update local state when cell is edited
-    const updateData = (rowIndex: number, columnId: EditableField, value: any) => {
-        setData((old) =>
-            old.map((row, index) => {
-                if (index === rowIndex) {
-                    const updated = {
-                        ...old[rowIndex]!,
-                        [columnId]: value,
-                    } as Transaction;
+    const updateData = useCallback(
+        <T extends EditableField>(rowIndex: number, columnId: T, value: EditableFieldValueMap[T]) => {
+            setData((old) =>
+                old.map((row, index) => {
+                    if (index === rowIndex) {
+                        const updated: TransactionRow = {
+                            ...row,
+                            [columnId]: value,
+                        };
 
-                    // Fire and forget update to DB
-                    // In real app, we'd handle loading/error states
-                    if (row.id) {
-                        persistUpdate(row.id, columnId, value);
+                        // Fire and forget update to DB
+                        // In real app, we'd handle loading/error states
+                        if (row.id) {
+                            persistUpdate(row.id, columnId, value);
+                        }
+
+                        return updated;
                     }
+                    return row;
+                })
+            );
+        },
+        [persistUpdate]
+    );
 
-                    return updated;
-                }
-                return row;
-            })
-        );
-    };
-
-    const columns = useMemo<ColumnDef<Transaction>[]>(
+    const columns = useMemo<ColumnDef<TransactionRow>[]>(
         () => [
             {
                 accessorKey: 'date',
@@ -108,22 +126,22 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
             {
                 accessorKey: 'description',
                 header: 'Concepto',
-                cell: ({ getValue, row, column }) => (
+                cell: ({ getValue, row }) => (
                     <EditableCell
                         value={getValue() as string}
-                        onSave={(val) => updateData(row.index, column.id as EditableField, val)}
+                        onSave={(val) => updateData(row.index, 'description', String(val))}
                     />
                 ),
             },
             {
                 accessorKey: 'category',
                 header: 'Categoría',
-                cell: ({ getValue, row, column }) => (
+                cell: ({ getValue, row }) => (
                     <EditableCell
                         value={getValue() as string}
                         type="select"
                         options={CATEGORY_OPTIONS}
-                        onSave={(val) => updateData(row.index, column.id as EditableField, val)}
+                        onSave={(val) => updateData(row.index, 'category', String(val))}
                     />
                 ),
             },
@@ -138,7 +156,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                         <ArrowUpDown className="ml-2 h-3 w-3" />
                     </button>
                 ),
-                cell: ({ getValue, row, column }) => {
+                cell: ({ getValue, row }) => {
                     const amount = getValue() as number;
                     const type = row.original.type;
                     const isExpense = type === 'expense' || amount < 0;
@@ -148,16 +166,18 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                             <EditableCell
                                 value={Math.abs(amount)} // Show positive for editing, color indicates sign
                                 type="currency"
-                                onSave={(val) => updateData(row.index, column.id as EditableField, isExpense ? -Math.abs(Number(val)) : Math.abs(Number(val)))}
+                                onSave={(val) => updateData(row.index, 'amount', isExpense ? -Math.abs(Number(val)) : Math.abs(Number(val)))}
                             />
                         </div>
                     )
                 },
             },
         ],
-        []
+        [updateData]
     );
 
+    // TanStack Table exposes unstable callbacks; safe to ignore for React Compiler
+    // eslint-disable-next-line react-hooks/incompatible-library
     const table = useReactTable({
         data,
         columns,
@@ -213,12 +233,12 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                                     key={row.id}
                                     className={cn(
                                         "bg-transparent hover:bg-white/5 transition-colors group",
-                                        (row.original as any).is_anomaly && "bg-red-500/5 hover:bg-red-500/10"
+                                        row.original.is_anomaly && "bg-red-500/5 hover:bg-red-500/10"
                                     )}
                                 >
                                     {row.getVisibleCells().map((cell) => (
                                         <td key={cell.id} className="px-6 py-4 relative">
-                                            {(row.original as any).is_anomaly && cell.column.id === 'date' && (
+                                            {row.original.is_anomaly && cell.column.id === 'date' && (
                                                 <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" title="Anomaly Detected" />
                                             )}
                                             {flexRender(cell.column.columnDef.cell, cell.getContext())}

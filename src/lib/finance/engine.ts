@@ -6,9 +6,10 @@ interface FinancialMetrics {
     projectedBalance: number[]; // Next 12 months
 }
 
-export function calculateMetrics(transactions: any[]): FinancialMetrics {
+export function calculateMetrics(transactions: unknown[]): FinancialMetrics {
     // Mock logic for demo purposes (robust logic would group by month)
     // In a real app, we'd filter transactions by last 3 months expenses
+    void transactions;
 
     const currentBalance = 43000; // Mock current balance
     const averageBurnRate = 11500; // Mock avg burn

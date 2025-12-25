@@ -2,7 +2,6 @@
 
 import { GlassCard } from "@/components/ui/GlassCard";
 import { X, AlertTriangle, TrendingDown, Info } from "lucide-react";
-import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 export interface Notification {

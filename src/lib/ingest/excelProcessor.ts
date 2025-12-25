@@ -3,6 +3,7 @@ import { Database } from '@/types/database.types';
 import { categorizeTransaction, isUncategorizedCategory } from '@/lib/finance/categorizer';
 
 type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
+type CellValue = string | number | boolean | Date | null | undefined;
 
 const DATE_HEADERS = ['date', 'fecha', 'fecha valor', 'dia', 'f. valor'];
 const AMOUNT_HEADERS = ['amount', 'importe', 'monto', 'cantidad', 'saldo', 'debe', 'haber', 'cargo', 'abono', 'ingreso', 'egreso', 'retiro'];
@@ -10,7 +11,7 @@ const DESC_HEADERS = ['description', 'concepto', 'descripcion', 'descripción', 
 const CATEGORY_HEADERS = ['category', 'categoria', 'tipo'];
 
 // Normalize header strings for matching (trim, lowercase, remove accents, collapse whitespace)
-const normalizeHeader = (val: any) =>
+const normalizeHeader = (val: unknown) =>
     String(val ?? '')
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -19,7 +20,7 @@ const normalizeHeader = (val: any) =>
         .replace(/[\r\n]+/g, '')
         .replace(/\s+/g, ' ');
 
-function detectHeaderRow(rows: any[][]) {
+function detectHeaderRow(rows: CellValue[][]) {
     let headerRowIndex = 0;
     let bestScore = -1;
 
@@ -58,12 +59,12 @@ export async function parseFinancialFile(file: File): Promise<TransactionInsert[
                 const sheet = workbook.Sheets[sheetName];
 
                 // Load all rows first to locate the header row (some files include titles or blank rows on top)
-                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true }) as any[][];
+                const rows = XLSX.utils.sheet_to_json<CellValue[]>(sheet, { header: 1, raw: true });
                 const { header, dataRows } = detectHeaderRow(rows);
 
                 // Build a JSON-like structure using the detected header row
                 const jsonData = dataRows.map((row) => {
-                    const obj: Record<string, any> = {};
+                    const obj: Record<string, CellValue> = {};
                     row.forEach((cell, idx) => {
                         const key = header[idx];
                         if (key) obj[key] = cell;
@@ -82,28 +83,35 @@ export async function parseFinancialFile(file: File): Promise<TransactionInsert[
                     // Try to match columns
                     const keys = Object.keys(row);
                     const findKey = (candidates: string[]) => keys.find(k => candidates.includes(normalizeHeader(k)));
+                    const getCell = (key?: string) => (key ? row[key] : undefined);
 
                     const dateKey = findKey(DATE_HEADERS);
                     const amountKey = findKey(AMOUNT_HEADERS);
                     const categoryKey = findKey(CATEGORY_HEADERS);
                     const descKey = findKey(DESC_HEADERS);
 
-                    let amountVal = row[amountKey || ''];
+                    const amountVal = getCell(amountKey);
 
                     // Fallback for Debit/Credit separation if applicable (simplified here, assuming single column for now based on previous requests, 
                     // but keeping the logic extensible if needed)
                     // If complex debit/credit logic is needed, we'd add it here.
 
                     const amount = parseAmount(amountVal);
-                    const description = row[descKey || ''] || 'Sin Descripcion';
+                    const descriptionCell = getCell(descKey);
+                    const description = descriptionCell !== undefined && descriptionCell !== null && descriptionCell !== true
+                        ? String(descriptionCell)
+                        : 'Sin Descripcion';
                     const type = amount < 0 ? 'expense' : 'income';
-                    const rawCategory = row[categoryKey || ''];
-                    const category = isUncategorizedCategory(rawCategory)
+                    const rawCategory = getCell(categoryKey);
+                    const categoryValue = rawCategory !== undefined && rawCategory !== null && rawCategory !== true
+                        ? String(rawCategory)
+                        : '';
+                    const category = isUncategorizedCategory(categoryValue)
                         ? categorizeTransaction(description, amount)
-                        : String(rawCategory);
+                        : categoryValue;
 
                     return {
-                        date: parseDate(row[dateKey || '']),
+                        date: parseDate(getCell(dateKey)),
                         amount: amount,
                         type,
                         category,
@@ -128,7 +136,7 @@ export async function parseFinancialFile(file: File): Promise<TransactionInsert[
     });
 }
 
-function parseAmount(val: any): number {
+function parseAmount(val: unknown): number {
     if (typeof val === 'number') return val;
     if (!val) return 0;
 
@@ -167,8 +175,13 @@ function parseAmount(val: any): number {
     return parseFloat(str) || 0;
 }
 
-function parseDate(val: any): string {
-    if (!val) return new Date().toISOString().split('T')[0];
+function parseDate(val: CellValue): string {
+    const today = new Date().toISOString().split('T')[0];
+    if (val === null || val === undefined || val === '' || val === false) return today;
+
+    if (val instanceof Date && !isNaN(val.getTime())) {
+        return val.toISOString().split('T')[0];
+    }
 
     // Handle Excel Serial Dates
     if (typeof val === 'number') {
@@ -176,11 +189,12 @@ function parseDate(val: any): string {
         return date.toISOString().split('T')[0];
     }
 
-    // Handle Strings
-    try {
-        const d = new Date(val);
-        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-    } catch { }
+    if (typeof val === 'string') {
+        try {
+            const d = new Date(val);
+            if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+        } catch { }
+    }
 
-    return new Date().toISOString().split('T')[0];
+    return today;
 }

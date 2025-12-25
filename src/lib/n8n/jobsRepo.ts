@@ -1,7 +1,7 @@
 type JobRecord = {
   jobId: string;
   status: string;
-  result?: any;
+  result?: unknown;
   receivedAt?: string;
 };
 
@@ -12,7 +12,7 @@ type JobRecord = {
 class JobsRepo {
   private store = new Map<string, JobRecord>();
 
-  upsert(jobId: string | number, status: string, result?: any, receivedAt?: string) {
+  upsert(jobId: string | number, status: string, result?: unknown, receivedAt?: string) {
     const key = String(jobId);
     this.store.set(key, { jobId: key, status, result, receivedAt });
   }

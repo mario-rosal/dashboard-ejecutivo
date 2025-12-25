@@ -2,6 +2,15 @@ import { NextResponse } from 'next/server';
 import { verifyHmac } from '@/lib/n8n/verifyHmac';
 import { jobsRepo } from '@/lib/n8n/jobsRepo';
 
+type CallbackPayload = {
+  jobId: string | number;
+  status: string;
+  result?: unknown;
+  meta?: {
+    receivedAt?: string;
+  } | null;
+};
+
 /**
  * Callback endpoint for n8n PDF processing.
  * Uses raw body for HMAC validation to avoid mismatches introduced by JSON parsing.
@@ -17,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
   }
 
-  let payload: any;
+  let payload: unknown;
   try {
     payload = JSON.parse(rawBody);
   } catch {
@@ -25,13 +34,27 @@ export async function POST(request: Request) {
   }
 
   // Minimal validation
-  const { jobId, status, result, meta } = payload || {};
+  if (!payload || typeof payload !== 'object') {
+    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+  }
+
+  const { jobId, status, result, meta } = payload as Partial<CallbackPayload>;
+
   if (jobId === undefined || status === undefined) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
 
+  if (typeof jobId !== 'string' && typeof jobId !== 'number') {
+    return NextResponse.json({ error: 'Invalid jobId type' }, { status: 400 });
+  }
+
+  if (typeof status !== 'string') {
+    return NextResponse.json({ error: 'Invalid status type' }, { status: 400 });
+  }
+
   // Persist (replace with DB in production)
-  jobsRepo.upsert(jobId, status, result, meta?.receivedAt);
+  const receivedAt = meta && typeof meta === 'object' ? meta?.receivedAt : undefined;
+  jobsRepo.upsert(jobId, status, result, receivedAt);
 
   // Respond quickly; heavy work (DB, notifications) should be async/backgrounded
   return NextResponse.json({ ok: true });

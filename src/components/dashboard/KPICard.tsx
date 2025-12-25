@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import { TrendingUp, TrendingDown, LucideIcon } from "lucide-react";
 
 interface KPICardProps {
     title: string;

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import {
-  BarChart4, FileInput, PlayCircle, Activity, LayoutDashboard, List,
+  BarChart4, FileInput, Activity, LayoutDashboard, List,
   TrendingUp, TrendingDown, Target, LineChart, Zap, Search, Table2
 } from 'lucide-react';
 
@@ -12,6 +12,7 @@ import { DistributionChart } from '@/components/dashboard/DistributionChart';
 import { TransactionTable } from '@/components/ledger/TransactionTable';
 import { RunwayChart } from '@/components/projections/RunwayChart';
 import { NotificationPanel } from '@/components/ui/NotificationPanel';
+import type { Notification } from '@/components/ui/NotificationPanel';
 import { parseFinancialFile } from '@/lib/ingest/excelProcessor';
 import { uploadPdfToWebhook } from '@/lib/ingest/pdfPipeline';
 import { autoCategorizeAll } from '@/lib/finance/categorizer';
@@ -19,12 +20,16 @@ import { autoCategorizeAll } from '@/lib/finance/categorizer';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import { UserMenu } from '@/components/ui/UserMenu';
+import { Database } from '@/types/database.types';
+
+type TransactionRow = Database['public']['Tables']['transactions']['Row'];
+type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
 
 export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions'>('dashboard');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   React.useEffect(() => {
@@ -161,8 +166,8 @@ export default function DashboardPage() {
   }, [transactions]);
 
   // Generate Notifications (Anomalies + System Alerts)
-  const notifications = React.useMemo(() => {
-    const list: any[] = [];
+  const notifications = React.useMemo<Notification[]>(() => {
+    const list: Notification[] = [];
 
     // 1. Add Anomalies
     anomalies.filter(a => a.type === 'warning').forEach((a, i) => {
@@ -224,13 +229,15 @@ export default function DashboardPage() {
           return;
         }
 
-        const dataToInsert = parsed.map(t => ({
+        const dataToInsert: TransactionInsert[] = parsed.map(t => ({
           ...t,
           user_id: userId,
           type: t.amount < 0 ? 'expense' : 'income'
         }));
 
-        const { error } = await supabase.from('transactions').insert(dataToInsert as any);
+        const { error } = await supabase
+          .from('transactions')
+          .insert<TransactionInsert>(dataToInsert);
 
         if (error) {
           console.error('Error saving to DB:', error);

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
-import { Upload, FileSpreadsheet, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { GlassCard } from '@/components/ui/GlassCard';
 
@@ -49,9 +49,10 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }:
             await onFileAccepted(file);
             setStatus('success');
             setTimeout(() => setStatus('idle'), 3000);
-        } catch (err: any) {
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Error processing file';
             setStatus('error');
-            setErrorMessage(err.message || 'Error processing file');
+            setErrorMessage(message);
         }
     }, [accept, onFileAccepted]);
 
@@ -63,9 +64,10 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }:
                 await onFileAccepted(file);
                 setStatus('success');
                 setTimeout(() => setStatus('idle'), 3000);
-            } catch (err: any) {
+            } catch (err) {
+                const message = err instanceof Error ? err.message : 'Error processing file';
                 setStatus('error');
-                setErrorMessage(err.message || 'Error processing file');
+                setErrorMessage(message);
             }
         }
     };
