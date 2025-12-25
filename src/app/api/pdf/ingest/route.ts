@@ -5,7 +5,7 @@ const N8N_INGEST_URL = 'https://n8n.mytaskpanel.com/webhook/pdf/ingest';
 export const runtime = 'nodejs'; // ensure Node APIs (crypto, FormData) are available
 
 function buildCallbackUrl(request: Request) {
-  const envBase = process.env.APP_BASE_URL;
+  const envBase = process.env.APP_BASE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
   if (envBase) return new URL('/api/n8n/callback', envBase).toString();
 
   const host = request.headers.get('host');
