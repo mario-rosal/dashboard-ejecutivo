@@ -1,29 +1,28 @@
 
-export async function uploadPdfToWebhook(file: File): Promise<void> {
-    // TODO: Replace with actual n8n webhook URL
-    const WEBHOOK_URL = process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL;
+import { supabase } from '@/lib/supabaseClient';
 
-    if (!WEBHOOK_URL) {
-        console.warn('n8n Webhook URL not configured');
-        // Simulate success for demo purposes
-        return new Promise(resolve => setTimeout(resolve, 1500));
+export async function uploadPdfToWebhook(file: File): Promise<void> {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+
+    if (!token) {
+        throw new Error("No hay sesión (access_token)");
     }
 
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('pdf', file);
     formData.append('filename', file.name);
 
-    try {
-        const response = await fetch(WEBHOOK_URL, {
-            method: 'POST',
-            body: formData,
-        });
+    const response = await fetch('/api/pdf/ingest', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
 
-        if (!response.ok) {
-            throw new Error(`Webhook Error: ${response.statusText}`);
-        }
-    } catch (error) {
-        console.error('PDF Upload Failed', error);
-        throw error;
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`Webhook Error: ${response.status} ${text}`);
     }
 }
