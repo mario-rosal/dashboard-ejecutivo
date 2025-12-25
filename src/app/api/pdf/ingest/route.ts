@@ -2,7 +2,7 @@ import { NextResponse as NextResp } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import type { Database } from '@/types/database.types';
-import { NextResponse } from 'next/server';
+import * as NextServer from 'next/server';
 
 const N8N_INGEST_URL = 'https://n8n.mytaskpanel.com/webhook/pdf/ingest';
 
@@ -30,10 +30,15 @@ function ensurePdf(file: File) {
 export async function POST(request: Request) {
   const bearer = process.env.N8N_INGEST_BEARER;
   if (!bearer) {
-    return NextResp.json({ error: 'Falta N8N_INGEST_BEARER' }, { status: 500 });
+    return NextServer.NextResponse.json({ error: 'Falta N8N_INGEST_BEARER' }, { status: 500 });
   }
 
   const cookieStore = await cookies();
+  const authHeader = request.headers.get('authorization');
+  const accessToken = authHeader?.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7)
+    : undefined;
+
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -50,6 +55,13 @@ export async function POST(request: Request) {
           }
         },
       },
+      global: accessToken
+        ? {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        : undefined,
     }
   );
 
@@ -61,14 +73,14 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const file = form.get('pdf');
   if (!(file instanceof File)) {
-    return NextResp.json({ error: 'Campo pdf requerido' }, { status: 400 });
+    return NextServer.NextResponse.json({ error: 'Campo pdf requerido' }, { status: 400 });
   }
 
   try {
     ensurePdf(file);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Archivo invalido';
-    return NextResp.json({ error: message }, { status: 400 });
+    return NextServer.NextResponse.json({ error: message }, { status: 400 });
   }
 
   let callbackUrl: string;
@@ -76,7 +88,7 @@ export async function POST(request: Request) {
     callbackUrl = buildCallbackUrl(request);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'No se pudo construir callbackUrl';
-    return NextResp.json({ error: message }, { status: 500 });
+    return NextServer.NextResponse.json({ error: message }, { status: 500 });
   }
 
   const outbound = new FormData();
@@ -99,11 +111,11 @@ export async function POST(request: Request) {
   const body = isJson ? await res.json() : await res.text();
 
   if (!res.ok) {
-    return NextResp.json(
+    return NextServer.NextResponse.json(
       { error: 'n8n error', status: res.status, body },
       { status: res.status || 502 }
     );
   }
 
-  return NextResp.json(body);
+  return NextServer.NextResponse.json(body);
 }
