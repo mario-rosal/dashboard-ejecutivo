@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+import type { Database } from '@/types/database.types';
 
 const N8N_INGEST_URL = 'https://n8n.mytaskpanel.com/webhook/pdf/ingest';
 
@@ -29,6 +32,38 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Falta N8N_INGEST_BEARER' }, { status: 500 });
   }
 
+  const cookieStore = cookies();
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: Parameters<typeof cookieStore.set>[1]) {
+          try {
+            cookieStore.set({ name, value, ...options });
+          } catch {
+            // ignore cookie set failures
+          }
+        },
+        remove(name: string, options: Parameters<typeof cookieStore.set>[1]) {
+          try {
+            cookieStore.set({ name, value: '', ...options });
+          } catch {
+            // ignore cookie removal failures
+          }
+        },
+      },
+    }
+  );
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   const form = await request.formData();
   const file = form.get('pdf');
   if (!(file instanceof File)) {
@@ -54,6 +89,8 @@ export async function POST(request: Request) {
   outbound.append('pdf', file);
   outbound.append('callbackUrl', callbackUrl);
   outbound.append('clientRequestId', crypto.randomUUID());
+  outbound.append('user_id', user.id);
+  outbound.append('source', 'pdf');
 
   const res = await fetch(N8N_INGEST_URL, {
     method: 'POST',
