@@ -5,7 +5,7 @@ import { categorizeTransaction, isUncategorizedCategory } from '@/lib/finance/ca
 type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
 type CellValue = string | number | boolean | Date | null | undefined;
 
-const DATE_HEADERS = ['date', 'fecha', 'fecha valor', 'dia', 'f. valor'];
+const DATE_HEADERS = ['date', 'fecha', 'fecha valor', 'dia', 'f. valor', 'f. operativa'];
 const AMOUNT_HEADERS = ['amount', 'importe', 'monto', 'cantidad', 'saldo', 'debe', 'haber', 'cargo', 'abono', 'ingreso', 'egreso', 'retiro'];
 const DESC_HEADERS = ['description', 'concepto', 'descripcion', 'descripción', 'detalle', 'movimiento'];
 const CATEGORY_HEADERS = ['category', 'categoria', 'tipo'];
@@ -190,8 +190,23 @@ function parseDate(val: CellValue): string {
     }
 
     if (typeof val === 'string') {
+        const trimmed = val.trim();
+
+        // Explicit dd/mm/yyyy or dd-mm-yyyy handling (with optional time) to avoid locale confusion
+        const slashOrDash = /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})(?:[ T].*)?$/;
+        const match = trimmed.match(slashOrDash);
+        if (match) {
+            const day = Number(match[1]);
+            const month = Number(match[2]);
+            const year = Number(match[3].length === 2 ? `20${match[3]}` : match[3]);
+            if (day >= 1 && day <= 31 && month >= 1 && month <= 12 && year > 1900) {
+                const date = new Date(Date.UTC(year, month - 1, day));
+                return date.toISOString().split('T')[0];
+            }
+        }
+
         try {
-            const d = new Date(val);
+            const d = new Date(trimmed);
             if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
         } catch { }
     }
