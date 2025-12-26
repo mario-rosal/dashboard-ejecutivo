@@ -45,79 +45,92 @@ function isUuid(value: string | undefined): value is string {
 }
 
 export async function POST(request: Request) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return NextResponse.json({ error: 'Missing Supabase service configuration' }, { status: 500 });
-  }
-
-  const signature = request.headers.get('x-signature');
-  console.log('[pdf/callback] hit', {
-    hasSig: Boolean(request.headers.get('x-signature')),
-    contentType: request.headers.get('content-type'),
-    hasBody: true,
-  });
-  const rawBody = await request.text();
-
-  if (!timingSafeMatch(signature, rawBody)) {
-    return new Response('Unauthorized', { status: 401 });
-  }
-  console.log('[pdf/callback] authorized');
-
-  let payload: IncomingPayload;
+  let step = 'start';
   try {
-    payload = JSON.parse(rawBody);
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
-  }
-
-  const transactions = payload.transactions;
-  if (!Array.isArray(transactions) || transactions.length === 0) {
-    return NextResponse.json({ error: 'No transactions provided' }, { status: 400 });
-  }
-
-  const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-
-  const prepared = [];
-  for (const tx of transactions) {
-    const userId = tx.user_id ?? payload.user_id;
-    if (!isUuid(userId)) {
-      return NextResponse.json({ error: 'Invalid or missing user_id' }, { status: 400 });
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json({ error: 'Missing Supabase service configuration' }, { status: 500 });
     }
 
-    const amount = Number(tx.amount ?? 0);
-    if (Number.isNaN(amount)) {
-      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+    const signature = request.headers.get('x-signature');
+    console.log('[pdf/callback] hit', {
+      hasSig: Boolean(request.headers.get('x-signature')),
+      contentType: request.headers.get('content-type'),
+      hasBody: true,
+    });
+    const rawBody = await request.text();
+    step = 'read_body';
+
+    step = 'verify_signature';
+    if (!timingSafeMatch(signature, rawBody)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    console.log('[pdf/callback] authorized');
+    step = 'signature_ok';
+
+    let payload: IncomingPayload;
+    try {
+      payload = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+    step = 'parse_json';
+
+    const transactions = payload.transactions;
+    if (!Array.isArray(transactions) || transactions.length === 0) {
+      return NextResponse.json({ error: 'No transactions provided' }, { status: 400 });
     }
 
-    if (!tx.date) {
-      return NextResponse.json({ error: 'Missing date' }, { status: 400 });
+    const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+
+    const prepared = [];
+    for (const tx of transactions) {
+      const userId = tx.user_id ?? payload.user_id;
+      if (!isUuid(userId)) {
+        return NextResponse.json({ error: 'Invalid or missing user_id' }, { status: 400 });
+      }
+
+      const amount = Number(tx.amount ?? 0);
+      if (Number.isNaN(amount)) {
+        return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+      }
+
+      if (!tx.date) {
+        return NextResponse.json({ error: 'Missing date' }, { status: 400 });
+      }
+
+      const type: 'income' | 'expense' = tx.type ?? (amount < 0 ? 'expense' : 'income');
+      prepared.push({
+        date: tx.date,
+        amount,
+        type,
+        category: tx.category || 'Sin Categoría',
+        description: tx.description ?? '',
+        user_id: userId,
+        channel: tx.channel || 'Importado',
+        is_anomaly: tx.is_anomaly ?? false,
+        file_source_id: tx.file_source_id ?? payload.file_source_id ?? null,
+      } satisfies Database['public']['Tables']['transactions']['Insert']);
+    }
+    step = 'prepare_rows';
+
+    console.log('[pdf/callback] inserting', { count: prepared.length });
+    step = 'db_insert';
+    const { error } = await supabase.from('transactions').insert(prepared);
+    if (error) {
+      console.log('[pdf/callback] db_error', { message: error.message });
+      return NextResponse.json({ error: 'DB insert failed', details: error.message }, { status: 400 });
     }
 
-    const type: 'income' | 'expense' = tx.type ?? (amount < 0 ? 'expense' : 'income');
-    prepared.push({
-      date: tx.date,
-      amount,
-      type,
-      category: tx.category || 'Sin Categoría',
-      description: tx.description ?? '',
-      user_id: userId,
-      channel: tx.channel || 'Importado',
-      is_anomaly: tx.is_anomaly ?? false,
-      file_source_id: tx.file_source_id ?? payload.file_source_id ?? null,
-    } satisfies Database['public']['Tables']['transactions']['Insert']);
+    console.log('[pdf/callback] inserted', { count: prepared.length });
+    return NextResponse.json({ ok: true, inserted: prepared.length });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[pdf/callback] error', { step, msg });
+    return NextResponse.json({ ok: false, step, message: msg }, { status: 500 });
   }
-
-  console.log('[pdf/callback] inserting', { count: prepared.length });
-  const { error } = await supabase.from('transactions').insert(prepared);
-  if (error) {
-    console.log('[pdf/callback] db_error', { message: error.message });
-    return NextResponse.json({ error: 'DB insert failed', details: error.message }, { status: 400 });
-  }
-
-  console.log('[pdf/callback] inserted', { count: prepared.length });
-  return NextResponse.json({ ok: true, inserted: prepared.length });
 }
