@@ -31,6 +31,9 @@ export default function DashboardPage() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   React.useEffect(() => {
     const init = async () => {
@@ -178,6 +181,47 @@ export default function DashboardPage() {
     return alerts;
     return alerts;
   }, [transactions]);
+
+  const handleGenerateInsight = async () => {
+    if (!transactions.length) return;
+    setAiLoading(true);
+    setAiError(null);
+
+    const payload = {
+      summary: {
+        totalIncome,
+        totalExpense,
+        profit,
+        margin,
+        currentBalance,
+        averageMonthlyNet,
+      },
+      monthlyAgg,
+      topIncomeCategories: incomeDistribution.slice(0, 5),
+      topExpenseCategories: expenseDistribution.slice(0, 5),
+      warnings: anomalies.filter((a) => a.type === 'warning').map((a) => a.message),
+    };
+
+    try {
+      const res = await fetch('/api/ai/insights', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok) {
+        setAiInsight(null);
+        setAiError(data?.error || 'Error generando insight');
+      } else {
+        setAiInsight(data.insight);
+      }
+    } catch (e) {
+      setAiInsight(null);
+      setAiError(e instanceof Error ? e.message : 'Error generando insight');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   // Generate Notifications (Anomalies + System Alerts)
   const notifications = React.useMemo<Notification[]>(() => {
@@ -437,6 +481,28 @@ export default function DashboardPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="glass-panel p-6">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                    <LineChart className="text-blue-400" size={16} /> Informe IA (Gemini)
+                  </h3>
+                  <button
+                    onClick={handleGenerateInsight}
+                    disabled={aiLoading || transactions.length === 0}
+                    className={`px-3 py-2 text-sm rounded-lg border transition-colors ${aiLoading || transactions.length === 0
+                      ? 'bg-slate-800/50 text-slate-500 border-slate-700 cursor-not-allowed'
+                      : 'bg-blue-600 text-white border-blue-500 hover:bg-blue-500'
+                      }`}
+                  >
+                    {aiLoading ? 'Generando...' : 'Generar insight'}
+                  </button>
+                </div>
+                {aiError && <p className="text-sm text-red-400 mb-2">{aiError}</p>}
+                <p className="text-sm text-slate-200 whitespace-pre-line">
+                  {aiInsight || 'Pulsa el botón para generar un resumen accionable con tus métricas actuales.'}
+                </p>
               </div>
             </div>
           )}
