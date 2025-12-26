@@ -148,18 +148,25 @@ export default function DashboardPage() {
     if (expenses.length > 5) {
       const avgExpense = Math.abs(expenses.reduce((acc, t) => acc + Number(t.amount), 0) / expenses.length);
 
-      // Find outliers
+      // Find outliers, largest first, and dedupe by description+amount+date to avoid duplicates
       const outliers = expenses
         .filter(t => Math.abs(Number(t.amount)) > avgExpense * 3)
-        .sort((a, b) => Math.abs(Number(a.amount)) - Math.abs(Number(b.amount))); // sort by size descending ?? actually sort descending
+        .sort((a, b) => Math.abs(Number(b.amount)) - Math.abs(Number(a.amount)));
 
-      outliers.slice(0, 3).forEach(t => {
+      const seen = new Set<string>();
+      for (const t of outliers) {
+        const key = `${t.description || ''}|${Math.abs(Number(t.amount))}|${t.date || ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
         alerts.push({
           title: "Gasto Inusual",
           message: `${t.description || 'Gasto'} (${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Math.abs(t.amount))}) supera 3x el promedio.`,
           type: 'warning'
         });
-      });
+
+        if (alerts.length >= 3) break;
+      }
     }
 
     if (alerts.length === 0 && transactions.length > 0) {
