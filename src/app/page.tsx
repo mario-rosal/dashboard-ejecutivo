@@ -82,22 +82,27 @@ export default function DashboardPage() {
   const currentBalance = transactions.reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
   const runwayProjection = React.useMemo(() => {
+    const formatMonth = (d: Date) => d.toLocaleString('es-ES', { month: 'short' }).replace('.', '');
+
     const baseDate = transactions.reduce<Date>((latest, t) => {
       const d = new Date(t.date);
       return isNaN(d.getTime()) || d <= latest ? latest : d;
     }, new Date());
 
-    const months = Array.from({ length: 6 }, (_, idx) => {
+    const months: string[] = [formatMonth(baseDate)];
+    for (let i = 1; i <= 6; i++) {
       const d = new Date(baseDate);
-      d.setMonth(d.getMonth() + idx + 1);
-      return d.toLocaleString('es-ES', { month: 'short' }).replace('.', '');
-    });
+      d.setMonth(d.getMonth() + i);
+      months.push(formatMonth(d));
+    }
 
+    const data: number[] = [];
     let balance = currentBalance;
-    const data = months.map(() => {
+    data.push(balance); // current balance
+    for (let i = 1; i < months.length; i++) {
       balance += averageMonthlyNet;
-      return balance;
-    });
+      data.push(balance);
+    }
 
     return { months, data };
   }, [transactions, currentBalance, averageMonthlyNet]);

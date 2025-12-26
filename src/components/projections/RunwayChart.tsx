@@ -32,7 +32,7 @@ export function RunwayChart({ data, months }: RunwayChartProps) {
             },
             {
                 label: 'Línea Zero',
-                data: Array(12).fill(0),
+                data: Array(months.length).fill(0),
                 borderColor: '#ef4444', // red-500
                 borderWidth: 1,
                 pointRadius: 0,
