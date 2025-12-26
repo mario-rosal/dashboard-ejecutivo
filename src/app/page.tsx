@@ -211,7 +211,7 @@ export default function DashboardPage() {
       const data = await res.json();
       if (!res.ok || !data?.ok) {
         setAiInsight(null);
-        setAiError(data?.error || 'Error generando insight');
+        setAiError(data?.detail || data?.message || data?.error || `Error LLM (${res.status})`);
       } else {
         setAiInsight(data.insight);
       }

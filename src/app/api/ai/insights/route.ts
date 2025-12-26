@@ -92,8 +92,9 @@ export async function POST(request: Request) {
     );
 
     if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ ok: false, error: 'llm_error', detail: text }, { status: 502 });
+      const detail = await res.text();
+      console.error('[ai/insights] llm_error', { status: res.status, detail });
+      return NextResponse.json({ ok: false, error: 'llm_error', status: res.status, detail }, { status: 502 });
     }
 
     const data = await res.json();
