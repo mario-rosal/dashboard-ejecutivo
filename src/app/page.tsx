@@ -156,12 +156,8 @@ export default function DashboardPage() {
       const seen = new Set<string>();
       for (const t of outliers) {
         const normalizedDesc = (t.description || '').trim().toLowerCase();
-        const normalizedDate = (() => {
-          const d = new Date(t.date);
-          return isNaN(d.getTime()) ? String(t.date || '') : d.toISOString().split('T')[0];
-        })();
         const amountCents = Math.round(Math.abs(Number(t.amount)) * 100);
-        const key = `${normalizedDesc}|${amountCents}|${normalizedDate}`;
+        const key = `${normalizedDesc}|${amountCents}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
