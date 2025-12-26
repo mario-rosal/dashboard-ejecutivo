@@ -50,11 +50,17 @@ export async function POST(request: Request) {
   }
 
   const signature = request.headers.get('x-signature');
+  console.log('[pdf/callback] hit', {
+    hasSig: Boolean(request.headers.get('x-signature')),
+    contentType: request.headers.get('content-type'),
+    hasBody: true,
+  });
   const rawBody = await request.text();
 
   if (!timingSafeMatch(signature, rawBody)) {
     return new Response('Unauthorized', { status: 401 });
   }
+  console.log('[pdf/callback] authorized');
 
   let payload: IncomingPayload;
   try {
@@ -105,10 +111,13 @@ export async function POST(request: Request) {
     } satisfies Database['public']['Tables']['transactions']['Insert']);
   }
 
+  console.log('[pdf/callback] inserting', { count: prepared.length });
   const { error } = await supabase.from('transactions').insert(prepared);
   if (error) {
+    console.log('[pdf/callback] db_error', { message: error.message });
     return NextResponse.json({ error: 'DB insert failed', details: error.message }, { status: 400 });
   }
 
+  console.log('[pdf/callback] inserted', { count: prepared.length });
   return NextResponse.json({ ok: true, inserted: prepared.length });
 }
