@@ -45,8 +45,8 @@ export default function DashboardPage() {
 
       const { data, error } = await supabase
         .from('transactions')
-        .eq('user_id', session.user.id)
         .select('*')
+        .eq('user_id', session.user.id)
         .order('date', { ascending: false });
 
       if (error) console.error('Error fetching transactions:', error);
