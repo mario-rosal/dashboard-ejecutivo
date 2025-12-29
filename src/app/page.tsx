@@ -85,30 +85,60 @@ export default function DashboardPage() {
   const currentBalance = transactions.reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
   const runwayProjection = React.useMemo(() => {
-    const formatMonth = (d: Date) => d.toLocaleString('es-ES', { month: 'short' }).replace('.', '');
+    const formatMonthLabel = (d: Date) => {
+      const month = d.toLocaleString('es-ES', { month: 'short' }).replace('.', '');
+      const year = d.toLocaleString('es-ES', { year: '2-digit' });
+      return `${month} '${year}`;
+    };
 
-    const baseDate = transactions.reduce<Date>((latest, t) => {
-      const d = new Date(t.date);
-      return isNaN(d.getTime()) || d <= latest ? latest : d;
-    }, new Date());
+    const sortedMonthly = [...monthlyAgg];
+    const actualMonths: string[] = [];
+    const actualBalances: number[] = [];
+    let runningBalance = 0;
 
-    const months: string[] = [formatMonth(baseDate)];
+    sortedMonthly.forEach((m) => {
+      const [year, month] = m.month.split('-').map(Number);
+      const labelDate = new Date(year, (month || 1) - 1, 1);
+      actualMonths.push(formatMonthLabel(labelDate));
+      runningBalance += (m.income - m.expense);
+      actualBalances.push(runningBalance);
+    });
+
+    if (actualMonths.length === 0) {
+      const now = new Date();
+      actualMonths.push(formatMonthLabel(now));
+      actualBalances.push(currentBalance);
+    }
+
+    const lastActualBalance = actualBalances[actualBalances.length - 1] ?? currentBalance;
+    const lastActualDate = (() => {
+      if (sortedMonthly.length === 0) return new Date();
+      const [year, month] = sortedMonthly[sortedMonthly.length - 1].month.split('-').map(Number);
+      return new Date(year, (month || 1) - 1, 1);
+    })();
+
+    const forecastMonths: string[] = [];
     for (let i = 1; i <= 6; i++) {
-      const d = new Date(baseDate);
+      const d = new Date(lastActualDate);
       d.setMonth(d.getMonth() + i);
-      months.push(formatMonth(d));
+      forecastMonths.push(formatMonthLabel(d));
     }
 
-    const data: number[] = [];
-    let balance = currentBalance;
-    data.push(balance); // current balance
-    for (let i = 1; i < months.length; i++) {
-      balance += averageMonthlyNet;
-      data.push(balance);
-    }
+    const labels = [...actualMonths, ...forecastMonths];
+    const actualValues: (number | null)[] = [...actualBalances, ...Array(forecastMonths.length).fill(null)];
+    const forecastValues: (number | null)[] = Array(labels.length).fill(null);
 
-    return { months, data };
-  }, [transactions, currentBalance, averageMonthlyNet]);
+    // Seed forecast with the last real balance, then extend with projected monthly net
+    const startIdx = actualMonths.length - 1;
+    forecastValues[startIdx] = lastActualBalance;
+    let projected = lastActualBalance;
+    forecastMonths.forEach((_, idx) => {
+      projected += averageMonthlyNet;
+      forecastValues[startIdx + 1 + idx] = projected;
+    });
+
+    return { labels, actualValues, forecastValues };
+  }, [monthlyAgg, currentBalance, averageMonthlyNet]);
 
   const incomeDistribution = React.useMemo(() => {
     const map = new Map<string, number>();
@@ -441,7 +471,11 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="h-[400px]">
-                    <RunwayChart data={runwayProjection.data} months={runwayProjection.months} />
+                    <RunwayChart
+                      labels={runwayProjection.labels}
+                      actualValues={runwayProjection.actualValues}
+                      forecastValues={runwayProjection.forecastValues}
+                    />
                   </div>
                 </div>
 

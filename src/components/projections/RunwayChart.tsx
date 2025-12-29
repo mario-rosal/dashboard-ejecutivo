@@ -7,32 +7,47 @@ import { ChartOptions } from "chart.js";
 import { AlertTriangle } from "lucide-react";
 
 interface RunwayChartProps {
-    data: number[]; // Projected balance for next 12 months
-    months: string[];
+    labels: string[];
+    actualValues: Array<number | null>;
+    forecastValues: Array<number | null>;
 }
 
-export function RunwayChart({ data, months }: RunwayChartProps) {
-    const zeroIndex = data.findIndex(v => v <= 0);
-    const deathDate = zeroIndex !== -1 ? months[zeroIndex] : null;
+export function RunwayChart({ labels, actualValues, forecastValues }: RunwayChartProps) {
+    const zeroIndex = labels.findIndex((_, idx) => {
+        const value = actualValues[idx] ?? forecastValues[idx];
+        return value !== null && value <= 0;
+    });
+    const deathDate = zeroIndex !== -1 ? labels[zeroIndex] : null;
 
     const chartData = {
-        labels: months,
+        labels,
         datasets: [
             {
-                label: 'Balance Proyectado',
-                data: data,
-                borderColor: '#8b5cf6', // violet-500
-                backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                borderDash: [5, 5],
-                tension: 0.4,
+                label: 'Balance Real',
+                data: actualValues,
+                borderColor: '#38bdf8', // sky-400
+                backgroundColor: 'rgba(56, 189, 248, 0.12)',
+                tension: 0.35,
                 fill: true,
                 pointStyle: 'circle',
                 pointRadius: 4,
                 pointHoverRadius: 6,
             },
             {
+                label: 'Balance Proyectado',
+                data: forecastValues,
+                borderColor: '#8b5cf6', // violet-500
+                backgroundColor: 'rgba(139, 92, 246, 0.08)',
+                borderDash: [6, 6],
+                tension: 0.35,
+                fill: true,
+                pointStyle: 'triangle',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+            },
+            {
                 label: 'Línea Zero',
-                data: Array(months.length).fill(0),
+                data: Array(labels.length).fill(0),
                 borderColor: '#ef4444', // red-500
                 borderWidth: 1,
                 pointRadius: 0,
@@ -53,7 +68,11 @@ export function RunwayChart({ data, months }: RunwayChartProps) {
                 intersect: false,
                 backgroundColor: 'rgba(24, 24, 27, 0.9)',
                 callbacks: {
-                    label: (context) => new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(context.raw as number)
+                    label: (context) => {
+                        const raw = context.raw;
+                        if (raw === null || raw === undefined) return '';
+                        return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Number(raw));
+                    }
                 }
             }
         },
@@ -72,7 +91,7 @@ export function RunwayChart({ data, months }: RunwayChartProps) {
     return (
         <GlassCard className="p-6 h-[400px] w-full relative">
             <div className="flex justify-between items-start mb-4">
-                <h3 className="text-lg font-semibold text-white">Proyección de Caja (12 Meses)</h3>
+                <h3 className="text-lg font-semibold text-white">Proyección de Caja (Histórico + Forecast)</h3>
                 {deathDate && (
                     <div className="flex items-center gap-2 px-3 py-1 rounded bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-bold animate-pulse">
                         <AlertTriangle size={14} />
