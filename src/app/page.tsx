@@ -558,12 +558,11 @@ export default function DashboardPage() {
                 {aiError && <p className="text-sm text-red-400 mb-2">{aiError}</p>}
                 <div className="rounded-lg border border-slate-800/60 bg-slate-900/40 p-4">
                   {aiInsight ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      className="markdown-body text-sm text-slate-200 leading-relaxed"
-                    >
-                      {aiInsight}
-                    </ReactMarkdown>
+                    <div className="markdown-body text-sm text-slate-200 leading-relaxed">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {aiInsight}
+                      </ReactMarkdown>
+                    </div>
                   ) : (
                     <p className="text-sm text-slate-300">
                       Pulsa el botón para generar un resumen accionable con tus métricas actuales.
