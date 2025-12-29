@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   BarChart4, FileInput, Activity, LayoutDashboard, List,
   TrendingUp, TrendingDown, Target, LineChart, Search, Table2
@@ -554,9 +556,20 @@ export default function DashboardPage() {
                   </button>
                 </div>
                 {aiError && <p className="text-sm text-red-400 mb-2">{aiError}</p>}
-                <p className="text-sm text-slate-200 whitespace-pre-line">
-                  {aiInsight || 'Pulsa el botón para generar un resumen accionable con tus métricas actuales.'}
-                </p>
+                <div className="rounded-lg border border-slate-800/60 bg-slate-900/40 p-4">
+                  {aiInsight ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      className="markdown-body text-sm text-slate-200 leading-relaxed"
+                    >
+                      {aiInsight}
+                    </ReactMarkdown>
+                  ) : (
+                    <p className="text-sm text-slate-300">
+                      Pulsa el botón para generar un resumen accionable con tus métricas actuales.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
