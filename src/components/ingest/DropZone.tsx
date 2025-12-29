@@ -102,7 +102,7 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }:
                             <Upload size={24} />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-slate-300">Excel (.xlsx) or CSV</p>
+                            <p className="text-sm font-medium text-slate-300">Excel (.xlsx) or CSV or PDF</p>
                             <p className="text-[10px] text-slate-500 mt-1">Drag file here</p>
                         </div>
                     </>
