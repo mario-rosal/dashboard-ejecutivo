@@ -45,6 +45,7 @@ export default function DashboardPage() {
 
       const { data, error } = await supabase
         .from('transactions')
+        .eq('user_id', session.user.id)
         .select('*')
         .order('date', { ascending: false });
 
@@ -56,6 +57,50 @@ export default function DashboardPage() {
 
     init();
   }, [router]);
+
+  const fetchTransactionsForUser = React.useCallback(async (uid: string) => {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', uid)
+      .order('date', { ascending: false });
+
+    if (error) {
+      throw new Error(`Error fetching transactions: ${error.message}`);
+    }
+
+    setTransactions(autoCategorizeAll(data || []));
+  }, []);
+
+  const countTransactionsForUser = React.useCallback(async (uid: string) => {
+    const { count, error } = await supabase
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', uid);
+
+    if (error) {
+      throw new Error(`Error contando transacciones: ${error.message}`);
+    }
+
+    return count ?? 0;
+  }, []);
+
+  const waitForPdfProcessing = React.useCallback(async (uid: string, baselineCount: number) => {
+    const maxWaitMs = 120000; // 2 minutes
+    const pollIntervalMs = 3000;
+    const started = Date.now();
+
+    while (Date.now() - started < maxWaitMs) {
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+      const currentCount = await countTransactionsForUser(uid);
+      if (currentCount > baselineCount) {
+        await fetchTransactionsForUser(uid);
+        return;
+      }
+    }
+
+    throw new Error('Seguimos procesando el PDF en n8n. Intenta refrescar en unos segundos.');
+  }, [countTransactionsForUser, fetchTransactionsForUser]);
 
   // Derived Metrics
   const totalIncome = transactions.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount || 0), 0);
@@ -299,8 +344,17 @@ export default function DashboardPage() {
 
   const handleFileIngest = async (file: File) => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+
+      if (!uid) {
+        throw new Error("Debes iniciar sesión para importar datos.");
+      }
+
       if (file.type === 'application/pdf') {
+        const baselineCount = await countTransactionsForUser(uid);
         await uploadPdfToWebhook(file);
+        await waitForPdfProcessing(uid, baselineCount);
       } else {
         const parsed = await parseFinancialFile(file);
 
@@ -309,17 +363,9 @@ export default function DashboardPage() {
           return;
         }
 
-        const { data: { session } } = await supabase.auth.getSession();
-        const userId = session?.user?.id;
-
-        if (!userId) {
-          alert("Debes iniciar sesión para importar datos.");
-          return;
-        }
-
         const dataToInsert: TransactionInsert[] = parsed.map(t => ({
           ...t,
-          user_id: userId,
+          user_id: uid,
           type: t.amount < 0 ? 'expense' : 'income'
         }));
 
@@ -332,12 +378,12 @@ export default function DashboardPage() {
           alert(`Error al guardar en base de datos: ${error.message}`);
         } else {
           alert(`Importación exitosa. Se añadieron ${dataToInsert.length} movimientos.`);
-          const { data } = await supabase.from('transactions').select('*').order('date', { ascending: false });
-          setTransactions(autoCategorizeAll(data || []));
+          await fetchTransactionsForUser(uid);
         }
       }
     } catch (e) {
       console.error(e);
+      throw e instanceof Error ? e : new Error('Error procesando archivo');
     }
   };
 
