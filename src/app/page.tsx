@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import {
   BarChart4, FileInput, Activity, LayoutDashboard, List,
-  TrendingUp, TrendingDown, Target, LineChart, Zap, Search, Table2
+  TrendingUp, TrendingDown, Target, LineChart, Search, Table2
 } from 'lucide-react';
 
 import { DropZone } from '@/components/ingest/DropZone';
@@ -454,32 +454,6 @@ export default function DashboardPage() {
                   <div className="h-[250px]">
                     <DistributionChart incomeData={incomeDistribution} expenseData={expenseDistribution} />
                   </div>
-                </div>
-              </div>
-
-              <div className="glass-panel p-6">
-                <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
-                  <Zap className="text-yellow-400" size={16} /> Alertas y Anomalías
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {anomalies.map((alert, idx) => (
-                    <div key={idx} className={`p-4 rounded-lg border flex items-start gap-3 ${alert.type === 'warning' ? 'bg-slate-800/40 border-yellow-500/30' : 'bg-slate-800/20 border-blue-500/20'}`}>
-                      {alert.type === 'warning' ? (
-                        <Zap className="w-5 h-5 mt-0.5 shrink-0 text-yellow-400" />
-                      ) : (
-                        <Activity className="w-5 h-5 mt-0.5 shrink-0 text-blue-400" />
-                      )}
-                      <div>
-                        <h4 className={`text-sm font-bold ${alert.type === 'warning' ? 'text-slate-200' : 'text-blue-200'}`}>{alert.title}</h4>
-                        <p className="text-xs text-slate-400 mt-1">{alert.message}</p>
-                      </div>
-                    </div>
-                  ))}
-                  {transactions.length === 0 && (
-                    <div className="p-4 rounded-lg bg-slate-800/20 border border-white/5 text-center text-slate-500 text-xs col-span-full">
-                      Importa datos para ver análisis de anomalías.
-                    </div>
-                  )}
                 </div>
               </div>
 
