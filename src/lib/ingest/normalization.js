@@ -22,18 +22,34 @@ function stripDiacritics(value) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+function cleanupMerchantCandidate(value) {
+  let cleaned = normalizeWhitespace(value);
+  cleaned = cleaned.replace(/^[0-9X*]{6,}\s+/i, '');
+  cleaned = cleaned.replace(/^N\.?\s*/i, '');
+  cleaned = cleaned.replace(/^PAGO DE\s+/i, '');
+  cleaned = cleaned.replace(/^RECIBO\s+/i, '');
+  return cleaned;
+}
+
 function extractMerchant(descriptionClean) {
   const cleaned = normalizeWhitespace(descriptionClean);
   const patterns = [
     /^COMPRA TARJ\.?\s+(.+)$/,
     /^ADEUDO RECIBO\s+(.+)$/,
-    /^TRANSFERENCIA A\/DE\s+(.+)$/,
+    /^TRANSFERENCIA\s+(?:A\/DE|A|DE)\s+(.+)$/,
+    /^NOMINA DE\s+(.+)$/,
+    /^PRESTAMO(?:S)?\s+(.+)$/,
+    /^GAS\s+(.+)$/,
+    /^TELEFONOS?\s+(.+)$/,
   ];
 
   for (const pattern of patterns) {
     const match = cleaned.match(pattern);
     if (match && match[1]) {
-      const merchant = normalizeWhitespace(collapseRepeatedSymbols(match[1].toUpperCase()));
+      const candidate = cleanupMerchantCandidate(match[1]);
+      if (!candidate) continue;
+      const merchant = normalizeWhitespace(collapseRepeatedSymbols(candidate.toUpperCase()));
+      if (!merchant) continue;
       return { merchantRaw: merchant, merchantNormalized: merchant };
     }
   }
@@ -46,7 +62,15 @@ function inferTxnType(descriptionClean, amount) {
 
   if (normalized.includes('COMISION')) return 'fee';
   if (normalized.includes('INTERESES')) return 'interest';
-  if (normalized.includes('TGSS') || normalized.includes('HACIENDA')) return 'tax';
+  if (
+    normalized.includes('TGSS') ||
+    normalized.includes('HACIENDA') ||
+    normalized.includes('SEGURIDAD SOCIAL') ||
+    normalized.includes('SEGUROS SOCIALES') ||
+    normalized.includes('IMPUEST')
+  ) {
+    return 'tax';
+  }
   if (normalized.includes('TRANSFERENCIA')) return 'transfer';
   if (amount > 0) return 'income';
   if (amount < 0) return 'expense';

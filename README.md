@@ -92,7 +92,14 @@ curl -X POST "http://localhost:3000/api/imports/<import_batch_id>/categorize?for
   -H "Authorization: Bearer <access_token>"
 ```
 
-2) Correccion manual + override opcional:
+2) Backfill + recategorizacion global (incluye historicos con import_batch_id null):
+
+```bash
+curl -X POST "http://localhost:3000/api/transactions/categorize?force=false" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+3) Correccion manual + override opcional:
 
 ```bash
 curl -X PATCH "http://localhost:3000/api/transactions/<id>/category" \
@@ -101,7 +108,7 @@ curl -X PATCH "http://localhost:3000/api/transactions/<id>/category" \
   -d '{"category_id":"<uuid>","apply_to_merchant":true,"scope":"user"}'
 ```
 
-3) Merchants sin categorizar:
+4) Merchants sin categorizar:
 
 ```bash
 curl -X GET "http://localhost:3000/api/merchants/uncategorized?limit=50" \

@@ -365,6 +365,20 @@ export default function DashboardPage() {
         const baselineCount = await countTransactionsForUser(uid);
         await uploadPdfToWebhook(file);
         await waitForPdfProcessing(uid, baselineCount);
+        if (accessToken) {
+          const res = await fetch('/api/transactions/categorize?force=false', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            console.error('Categorization failed:', res.status, text);
+          } else {
+            await fetchTransactionsForUser(uid);
+          }
+        }
       } else {
         const parsed = await parseFinancialFile(file);
 

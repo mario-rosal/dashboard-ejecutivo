@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 import type { Database } from '@/types/database.types';
+import { normalizeDescription, extractMerchant, inferTxnType } from '@/lib/ingest/normalization';
 
 export const runtime = 'nodejs';
 
@@ -119,12 +120,26 @@ export async function POST(request: Request) {
       }
 
       const type: 'income' | 'expense' = tx.type ?? (amount < 0 ? 'expense' : 'income');
+      const descriptionRaw = String(tx.description ?? '').trim();
+      const descriptionClean = descriptionRaw ? normalizeDescription(descriptionRaw) : null;
+      const merchant = descriptionClean ? extractMerchant(descriptionClean) : { merchantRaw: null, merchantNormalized: null };
+      const inferredTxnType = inferTxnType(descriptionClean ?? '', amount);
       prepared.push({
         date: tx.date,
         amount,
         type,
         category: tx.category || 'Sin Categoria',
         description: tx.description ?? '',
+        description_raw: descriptionRaw || null,
+        description_clean: descriptionClean,
+        merchant_raw: merchant.merchantRaw,
+        merchant_normalized: merchant.merchantNormalized,
+        txn_type: inferredTxnType,
+        bank_source: 'pdf',
+        category_id: null,
+        category_source: 'unknown',
+        category_confidence: null,
+        rule_id: null,
         user_id: userId,
         channel: tx.channel || 'Importado',
         is_anomaly: tx.is_anomaly ?? false,
