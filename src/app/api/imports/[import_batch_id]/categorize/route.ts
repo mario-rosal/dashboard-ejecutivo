@@ -10,12 +10,28 @@ export const runtime = 'nodejs';
 const PAGE_SIZE = 1000;
 const CHUNK_SIZE = 500;
 
+type CategorizationTransaction = Pick<
+  Database['public']['Tables']['transactions']['Row'],
+  | 'id'
+  | 'user_id'
+  | 'account_id'
+  | 'amount'
+  | 'txn_type'
+  | 'description_clean'
+  | 'merchant_normalized'
+  | 'category_id'
+  | 'category_source'
+  | 'category_confidence'
+  | 'rule_id'
+  | 'category'
+>;
+
 async function fetchTransactions(
   supabase: ReturnType<typeof getSupabaseAdmin>,
   importBatchId: string,
   userId: string
 ) {
-  const rows: Database['public']['Tables']['transactions']['Row'][] = [];
+  const rows: CategorizationTransaction[] = [];
   let from = 0;
 
   while (true) {
