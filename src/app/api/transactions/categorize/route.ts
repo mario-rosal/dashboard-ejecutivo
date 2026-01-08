@@ -76,6 +76,26 @@ async function fetchOverrides(
   return overrides;
 }
 
+async function applyUpdates(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  updates: Database['public']['Tables']['transactions']['Update'][],
+  userId: string
+) {
+  for (const update of updates) {
+    if (!update?.id) continue;
+    const { id, user_id: _userId, ...payload } = update;
+    const { error } = await supabase
+      .from('transactions')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId);
+    if (error) {
+      return error;
+    }
+  }
+  return null;
+}
+
 export async function POST(request: Request) {
   const cookieStore = await cookies();
   const authHeader = request.headers.get('authorization');
@@ -263,7 +283,7 @@ export async function POST(request: Request) {
     })
     .filter((update) => update && update.id && update.user_id);
   if (finalUpdates.length > 0) {
-    const { error } = await supabase.from('transactions').upsert(finalUpdates, { onConflict: 'id' });
+    const error = await applyUpdates(supabase, finalUpdates, userId);
     if (error) {
       console.error('[categorize-all] update failed', error);
       return NextResponse.json({ error: 'update_failed', message: error.message }, { status: 500 });

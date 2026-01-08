@@ -77,6 +77,26 @@ async function fetchOverrides(
   return overrides;
 }
 
+async function applyUpdates(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  updates: Database['public']['Tables']['transactions']['Update'][],
+  userId: string
+) {
+  for (const update of updates) {
+    if (!update?.id) continue;
+    const { id, user_id: _userId, ...payload } = update;
+    const { error } = await supabase
+      .from('transactions')
+      .update(payload)
+      .eq('id', id)
+      .eq('user_id', userId);
+    if (error) {
+      return error;
+    }
+  }
+  return null;
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ import_batch_id: string }> }
@@ -180,7 +200,7 @@ export async function POST(
   });
 
   if (updates.length > 0) {
-    const { error } = await supabase.from('transactions').upsert(updates, { onConflict: 'id' });
+    const error = await applyUpdates(supabase, updates, user.id);
     if (error) {
       console.error('[categorize-batch] update failed', error);
       return NextResponse.json({ error: 'update_failed', message: error.message }, { status: 500 });
