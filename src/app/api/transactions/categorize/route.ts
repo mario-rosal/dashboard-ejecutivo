@@ -114,11 +114,12 @@ export async function POST(request: Request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
+  const userId = user.id;
   const url = new URL(request.url);
   const force = url.searchParams.get('force') === 'true';
 
   const supabase = getSupabaseAdmin();
-  const transactions = await fetchTransactions(supabase, user.id);
+  const transactions = await fetchTransactions(supabase, userId);
 
   if (transactions.length === 0) {
     return NextResponse.json({ ok: true, updated: 0, skipped: 0, total: 0 });
@@ -201,7 +202,7 @@ export async function POST(request: Request) {
     )
   );
   const overrides = merchantKeys.length
-    ? await fetchOverrides(supabase, user.id, merchantKeys)
+    ? await fetchOverrides(supabase, userId, merchantKeys)
     : [];
 
   const { data: rules, error: rulesError } = await supabase
@@ -210,7 +211,7 @@ export async function POST(request: Request) {
       'id,user_id,priority,is_active,match_field,match_type,pattern,txn_type_filter,min_amount,max_amount,category_id,confidence,created_at'
     )
     .eq('is_active', true)
-    .or(`user_id.eq.${user.id},user_id.is.null`);
+    .or(`user_id.eq.${userId},user_id.is.null`);
 
   if (rulesError) {
     console.error('[categorize-all] rules fetch failed', rulesError);
@@ -249,9 +250,9 @@ export async function POST(request: Request) {
     .map((update) => {
       if (!update?.id) return update;
       const base = transactionById.get(update.id);
-      if (!base) return update;
+      if (!base) return { ...update, user_id: update.user_id ?? userId };
       return {
-        user_id: update.user_id ?? base.user_id ?? undefined,
+        user_id: update.user_id ?? base.user_id ?? userId,
         account_id: update.account_id ?? base.account_id ?? undefined,
         date: update.date ?? base.date,
         amount: update.amount ?? base.amount,
