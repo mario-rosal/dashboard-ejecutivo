@@ -128,8 +128,10 @@ export async function POST(request: Request) {
   const updatesMap = new Map<string, Database['public']['Tables']['transactions']['Insert']>();
   const canonicalUpdated = new Set<string>();
   const normalizedTransactions: CategorizationTransaction[] = [];
+  const transactionById = new Map<string, CategorizationTransaction>();
 
   for (const tx of transactions) {
+    transactionById.set(tx.id, tx);
     const descriptionRaw = String(tx.description_raw ?? tx.description ?? '').trim();
     const descriptionClean = descriptionRaw ? normalizeDescription(descriptionRaw) : null;
     const extracted = descriptionClean ? extractMerchant(descriptionClean) : { merchantRaw: null, merchantNormalized: null };
@@ -243,7 +245,22 @@ export async function POST(request: Request) {
     updatesMap.set(update.id, existing ? { ...existing, ...update } : update);
   }
 
-  const finalUpdates = Array.from(updatesMap.values());
+  const finalUpdates = Array.from(updatesMap.values())
+    .map((update) => {
+      if (!update?.id) return update;
+      const base = transactionById.get(update.id);
+      if (!base) return update;
+      return {
+        user_id: update.user_id ?? base.user_id ?? undefined,
+        account_id: update.account_id ?? base.account_id ?? undefined,
+        date: update.date ?? base.date,
+        amount: update.amount ?? base.amount,
+        type: update.type ?? base.type,
+        category: update.category ?? base.category ?? 'Sin Categoria',
+        ...update,
+      };
+    })
+    .filter((update) => update && update.id && update.user_id);
   if (finalUpdates.length > 0) {
     const { error } = await supabase.from('transactions').upsert(finalUpdates, { onConflict: 'id' });
     if (error) {
