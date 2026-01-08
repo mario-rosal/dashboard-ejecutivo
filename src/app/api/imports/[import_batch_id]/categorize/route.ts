@@ -132,7 +132,11 @@ export async function POST(
   }
 
   const merchantKeys = Array.from(
-    new Set(transactions.map((tx) => tx.merchant_normalized).filter(Boolean))
+    new Set(
+      transactions
+        .map((tx) => tx.merchant_normalized)
+        .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+    )
   );
   const overrides = merchantKeys.length
     ? await fetchOverrides(supabase, user.id, merchantKeys)
