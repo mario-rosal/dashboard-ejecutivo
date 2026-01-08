@@ -90,6 +90,55 @@ function findFirstMatch(rules, transaction) {
   return null;
 }
 
+/**
+ * @typedef {Object} CategorizationTransaction
+ * @property {string} id
+ * @property {string | null | undefined} user_id
+ * @property {string | null | undefined} account_id
+ * @property {number | null | undefined} amount
+ * @property {string | null | undefined} txn_type
+ * @property {string | null | undefined} description_clean
+ * @property {string | null | undefined} merchant_normalized
+ * @property {string | null | undefined} category_id
+ * @property {string | null | undefined} category_source
+ * @property {number | null | undefined} category_confidence
+ * @property {string | null | undefined} rule_id
+ * @property {string | null | undefined} category
+ */
+
+/**
+ * @typedef {Object} CategoryRule
+ * @property {string | null | undefined} id
+ * @property {string | null | undefined} user_id
+ * @property {number | null | undefined} priority
+ * @property {boolean | null | undefined} is_active
+ * @property {string | null | undefined} match_field
+ * @property {string | null | undefined} match_type
+ * @property {string | null | undefined} pattern
+ * @property {string[] | null | undefined} txn_type_filter
+ * @property {number | null | undefined} min_amount
+ * @property {number | null | undefined} max_amount
+ * @property {string | null | undefined} category_id
+ * @property {number | null | undefined} confidence
+ * @property {string | null | undefined} created_at
+ */
+
+/**
+ * @typedef {Object} MerchantOverride
+ * @property {string | null | undefined} id
+ * @property {string | null | undefined} user_id
+ * @property {string | null | undefined} merchant_normalized
+ * @property {string | null | undefined} category_id
+ * @property {string | null | undefined} scope
+ * @property {string | null | undefined} account_id
+ * @property {boolean | null | undefined} is_active
+ * @property {string | null | undefined} created_at
+ * @property {string | null | undefined} updated_at
+ */
+
+/**
+ * @param {{ transaction: CategorizationTransaction, overrides?: MerchantOverride[], rules?: CategoryRule[], force?: boolean }} args
+ */
 function evaluateCategorization({ transaction, overrides = [], rules = [], force = false }) {
   if (!transaction) return null;
 
@@ -202,6 +251,15 @@ function buildAuditRecord(transaction, decision) {
   };
 }
 
+/**
+ * @param {{
+ *   transactions: CategorizationTransaction[],
+ *   overrides?: MerchantOverride[],
+ *   rules?: CategoryRule[],
+ *   categoriesById?: Record<string, string>,
+ *   force?: boolean
+ * }} args
+ */
 function buildBatchUpdates({ transactions, overrides = [], rules = [], categoriesById = {}, force = false }) {
   const updates = [];
   const audits = [];
