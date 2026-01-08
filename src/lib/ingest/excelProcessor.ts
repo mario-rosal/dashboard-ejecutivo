@@ -1,6 +1,10 @@
 import * as XLSX from 'xlsx';
 import { Database } from '@/types/database.types';
-import { categorizeTransaction, isUncategorizedCategory } from '@/lib/finance/categorizer';
+import {
+    normalizeDescription,
+    extractMerchant,
+    inferTxnType,
+} from '@/lib/ingest/normalization';
 
 type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
 type CellValue = string | number | boolean | Date | null | undefined;
@@ -87,7 +91,6 @@ export async function parseFinancialFile(file: File): Promise<TransactionInsert[
 
                     const dateKey = findKey(DATE_HEADERS);
                     const amountKey = findKey(AMOUNT_HEADERS);
-                    const categoryKey = findKey(CATEGORY_HEADERS);
                     const descKey = findKey(DESC_HEADERS);
 
                     const amountVal = getCell(amountKey);
@@ -102,21 +105,27 @@ export async function parseFinancialFile(file: File): Promise<TransactionInsert[
                         ? String(descriptionCell)
                         : 'Sin Descripcion';
                     const type = amount < 0 ? 'expense' : 'income';
-                    const rawCategory = getCell(categoryKey);
-                    const categoryValue = rawCategory !== undefined && rawCategory !== null && rawCategory !== true
-                        ? String(rawCategory)
-                        : '';
-                    const category = isUncategorizedCategory(categoryValue)
-                        ? categorizeTransaction(description, amount)
-                        : categoryValue;
+                    const descriptionRaw = description;
+                    const descriptionClean = normalizeDescription(descriptionRaw);
+                    const { merchantRaw, merchantNormalized } = extractMerchant(descriptionClean);
+                    const txnType = inferTxnType(descriptionClean, amount);
 
                     return {
                         date: parseDate(getCell(dateKey)),
                         amount: amount,
                         type,
-                        category,
-                        description,
-                        user_id: '',
+                        category: 'Sin Categoria',
+                        category_id: null,
+                        category_source: 'unknown',
+                        category_confidence: null,
+                        rule_id: null,
+                        description: descriptionRaw,
+                        description_raw: descriptionRaw,
+                        description_clean: descriptionClean,
+                        merchant_raw: merchantRaw,
+                        merchant_normalized: merchantNormalized,
+                        txn_type: txnType,
+                        bank_source: 'excel',
                         channel: 'Importado',
                         is_anomaly: false
                     };

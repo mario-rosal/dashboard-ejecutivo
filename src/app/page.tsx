@@ -17,7 +17,6 @@ import { NotificationPanel } from '@/components/ui/NotificationPanel';
 import type { Notification } from '@/components/ui/NotificationPanel';
 import { parseFinancialFile } from '@/lib/ingest/excelProcessor';
 import { uploadPdfToWebhook } from '@/lib/ingest/pdfPipeline';
-import { autoCategorizeAll } from '@/lib/finance/categorizer';
 
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -52,7 +51,7 @@ export default function DashboardPage() {
         .order('date', { ascending: false });
 
       if (error) console.error('Error fetching transactions:', error);
-      else setTransactions(autoCategorizeAll(data || []));
+      else setTransactions(data || []);
 
       setLoading(false);
     };
@@ -71,7 +70,15 @@ export default function DashboardPage() {
       throw new Error(`Error fetching transactions: ${error.message}`);
     }
 
-    setTransactions(autoCategorizeAll(data || []));
+    setTransactions(data || []);
+  }, []);
+
+  const hashFile = React.useCallback(async (file: File) => {
+    const buffer = await file.arrayBuffer();
+    const digest = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   }, []);
 
   const countTransactionsForUser = React.useCallback(async (uid: string) => {
@@ -348,9 +355,10 @@ export default function DashboardPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id;
+      const accessToken = session?.access_token;
 
       if (!uid) {
-        throw new Error("Debes iniciar sesión para importar datos.");
+        throw new Error("Debes iniciar sesi?n para importar datos.");
       }
 
       if (file.type === 'application/pdf') {
@@ -365,9 +373,31 @@ export default function DashboardPage() {
           return;
         }
 
+        const fileHash = await hashFile(file);
+        const { data: batch, error: batchError } = await supabase
+          .from('import_batches')
+          .insert({
+            user_id: uid,
+            bank_source: 'excel',
+            file_name: file.name || 'upload',
+            file_hash: fileHash,
+            rows_total: parsed.length,
+            rows_inserted: 0,
+            rows_skipped: 0,
+          })
+          .select('id')
+          .single();
+
+        if (batchError || !batch) {
+          console.error('Error creating import batch:', batchError);
+          alert(`Error creando import batch: ${batchError?.message || 'sin detalle'}`);
+          return;
+        }
+
         const dataToInsert: TransactionInsert[] = parsed.map(t => ({
           ...t,
           user_id: uid,
+          import_batch_id: batch.id,
           type: t.amount < 0 ? 'expense' : 'income'
         }));
 
@@ -379,7 +409,29 @@ export default function DashboardPage() {
           console.error('Error saving to DB:', error);
           alert(`Error al guardar en base de datos: ${error.message}`);
         } else {
-          alert(`Importación exitosa. Se añadieron ${dataToInsert.length} movimientos.`);
+          const { error: batchUpdateError } = await supabase
+            .from('import_batches')
+            .update({ rows_inserted: dataToInsert.length })
+            .eq('id', batch.id);
+
+          if (batchUpdateError) {
+            console.error('Error updating import batch:', batchUpdateError);
+          }
+
+          if (accessToken) {
+            const res = await fetch(`/api/imports/${batch.id}/categorize?force=false`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              console.error('Categorization failed:', res.status, text);
+            }
+          }
+
+          alert(`Importaci?n exitosa. Se a?adieron ${dataToInsert.length} movimientos.`);
           await fetchTransactionsForUser(uid);
         }
       }

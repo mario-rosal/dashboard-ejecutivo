@@ -7,10 +7,10 @@ import { GlassCard } from '@/components/ui/GlassCard';
 
 interface DropZoneProps {
     onFileAccepted: (file: File) => Promise<void>;
-    accept?: string[]; // e.g. ['.csv', '.xlsx']
+    accept?: string[]; // e.g. ['.csv', '.xls', '.xlsx']
 }
 
-export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }: DropZoneProps) {
+export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx', '.pdf'] }: DropZoneProps) {
     const [isDragActive, setIsDragActive] = useState(false);
     const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
@@ -25,6 +25,11 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }:
         }
     }, []);
 
+    const isAcceptedExtension = useCallback((file: File) => {
+        const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+        return accept.includes(ext);
+    }, [accept]);
+
     const handleDrop = useCallback(async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -36,8 +41,7 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }:
         const file = files[0]; // Single file for now
 
         // Check extension
-        const ext = '.' + file.name.split('.').pop()?.toLowerCase();
-        if (!accept.includes(ext)) {
+        if (!isAcceptedExtension(file)) {
             setStatus('error');
             setErrorMessage(`Format invalid. Accept: ${accept.join(', ')}`);
             setTimeout(() => setStatus('idle'), 3000);
@@ -60,6 +64,12 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }:
         if (e.target.files && e.target.files.length > 0) {
             const file = e.target.files[0];
             try {
+                if (!isAcceptedExtension(file)) {
+                    setStatus('error');
+                    setErrorMessage(`Format invalid. Accept: ${accept.join(', ')}`);
+                    setTimeout(() => setStatus('idle'), 3000);
+                    return;
+                }
                 setStatus('processing');
                 await onFileAccepted(file);
                 setStatus('success');
@@ -102,7 +112,7 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xlsx', '.pdf'] }:
                             <Upload size={24} />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-slate-300">Excel (.xlsx) or CSV or PDF</p>
+                            <p className="text-sm font-medium text-slate-300">Excel (.xls/.xlsx), CSV or PDF</p>
                             <p className="text-[10px] text-slate-500 mt-1">Drag file here</p>
                         </div>
                     </>
