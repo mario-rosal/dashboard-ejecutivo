@@ -15,7 +15,7 @@ type Payload = {
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const cookieStore = await cookies();
   const authHeader = request.headers.get('authorization');
@@ -66,7 +66,7 @@ export async function PATCH(
     return NextResponse.json({ error: 'category_id requerido' }, { status: 400 });
   }
 
-  const transactionId = params.id;
+  const { id: transactionId } = await params;
   if (!transactionId) {
     return NextResponse.json({ error: 'transaction_id requerido' }, { status: 400 });
   }

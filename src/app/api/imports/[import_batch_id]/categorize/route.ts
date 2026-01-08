@@ -61,7 +61,7 @@ async function fetchOverrides(
 
 export async function POST(
   request: Request,
-  { params }: { params: { import_batch_id: string } }
+  { params }: { params: Promise<{ import_batch_id: string }> }
 ) {
   const cookieStore = await cookies();
   const authHeader = request.headers.get('authorization');
@@ -100,7 +100,7 @@ export async function POST(
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const importBatchId = params.import_batch_id;
+  const { import_batch_id: importBatchId } = await params;
   if (!importBatchId) {
     return NextResponse.json({ error: 'import_batch_id requerido' }, { status: 400 });
   }
