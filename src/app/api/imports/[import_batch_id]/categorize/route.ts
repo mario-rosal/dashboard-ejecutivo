@@ -65,7 +65,7 @@ async function fetchOverrides(
     const chunk = merchantKeys.slice(i, i + CHUNK_SIZE);
     const { data, error } = await supabase
       .from('merchant_category_overrides')
-      .select('id,user_id,merchant_normalized,category_id,scope,account_id,is_active,created_at')
+      .select('id,user_id,merchant_normalized,category_id,scope,account_id,is_active,created_at,updated_at')
       .eq('user_id', userId)
       .eq('is_active', true)
       .in('merchant_normalized', chunk);
