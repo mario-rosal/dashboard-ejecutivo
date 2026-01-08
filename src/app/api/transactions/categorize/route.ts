@@ -238,6 +238,7 @@ export async function POST(request: Request) {
   });
 
   for (const update of updates) {
+    if (!update?.id) continue;
     const existing = updatesMap.get(update.id);
     updatesMap.set(update.id, existing ? { ...existing, ...update } : update);
   }
