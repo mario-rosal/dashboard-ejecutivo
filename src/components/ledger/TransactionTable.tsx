@@ -19,6 +19,13 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
 
 const CATEGORY_OPTIONS = [
+    'Infra Cloud',
+    'SaaS / Suscripciones',
+    'Marketing',
+    'Comisiones bancarias',
+    'Intereses',
+    'Impuestos / SS',
+    'Transferencias',
     'Infraestructura',
     'Software & IA',
     'Equipo & Nominas',
