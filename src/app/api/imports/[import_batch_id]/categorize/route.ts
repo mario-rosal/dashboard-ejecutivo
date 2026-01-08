@@ -15,7 +15,9 @@ type CategorizationTransaction = Pick<
   | 'id'
   | 'user_id'
   | 'account_id'
+  | 'date'
   | 'amount'
+  | 'type'
   | 'txn_type'
   | 'description_clean'
   | 'merchant_normalized'
@@ -39,7 +41,7 @@ async function fetchTransactions(
     const { data, error } = await supabase
       .from('transactions')
       .select(
-        'id,user_id,account_id,amount,txn_type,description_clean,merchant_normalized,category_id,category_source,category_confidence,rule_id,category'
+        'id,user_id,account_id,date,amount,type,txn_type,description_clean,merchant_normalized,category_id,category_source,category_confidence,rule_id,category'
       )
       .eq('import_batch_id', importBatchId)
       .eq('user_id', userId)

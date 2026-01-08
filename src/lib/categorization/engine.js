@@ -95,7 +95,9 @@ function findFirstMatch(rules, transaction) {
  * @property {string} id
  * @property {string | null | undefined} user_id
  * @property {string | null | undefined} account_id
+ * @property {string | null | undefined} date
  * @property {number | null | undefined} amount
+ * @property {string | null | undefined} type
  * @property {string | null | undefined} txn_type
  * @property {string | null | undefined} description_clean
  * @property {string | null | undefined} merchant_normalized
@@ -227,8 +229,15 @@ function buildTransactionUpdate(transaction, decision, categoriesById = {}) {
   const categoryName = decision.category_id ? categoriesById[decision.category_id] : null;
   const fallbackCategory = categoryName || (decision.category_id ? null : 'Sin Categoria');
 
+  if (!transaction.date || transaction.amount === null || transaction.amount === undefined || !transaction.type) {
+    return null;
+  }
+
   return {
     id: transaction.id,
+    date: transaction.date,
+    amount: transaction.amount,
+    type: transaction.type,
     category_id: decision.category_id,
     category_source: decision.category_source,
     category_confidence: decision.category_confidence,
