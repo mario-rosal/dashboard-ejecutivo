@@ -270,16 +270,19 @@ export async function POST(request: Request) {
     .map((update) => {
       if (!update?.id) return update;
       const base = transactionById.get(update.id);
-      if (!base) return { ...update, user_id: update.user_id ?? userId };
-      return {
-        user_id: update.user_id ?? base.user_id ?? userId,
-        account_id: update.account_id ?? base.account_id ?? undefined,
-        date: update.date ?? base.date,
-        amount: update.amount ?? base.amount,
-        type: update.type ?? base.type,
-        category: update.category ?? base.category ?? 'Sin Categoria',
-        ...update,
-      };
+      if (!base) {
+        const resolved = { ...update };
+        resolved.user_id = update.user_id ?? userId;
+        return resolved;
+      }
+      const resolved = { ...update };
+      resolved.user_id = update.user_id ?? base.user_id ?? userId;
+      resolved.account_id = update.account_id ?? base.account_id ?? undefined;
+      resolved.date = update.date ?? base.date;
+      resolved.amount = update.amount ?? base.amount;
+      resolved.type = update.type ?? base.type;
+      resolved.category = update.category ?? base.category ?? 'Sin Categoria';
+      return resolved;
     })
     .filter((update) => update && update.id && update.user_id);
   if (finalUpdates.length > 0) {
