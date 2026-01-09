@@ -1,4 +1,8 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { createServerClient } from '@supabase/ssr';
+import type { Database } from '@/types/database.types';
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
@@ -127,6 +131,31 @@ function buildPrompt(payload: InsightRequest) {
 }
 
 export async function POST(request: Request) {
+  const cookieStore = await cookies();
+  const supabaseAuth = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (allCookies) => {
+          try {
+            allCookies.forEach(({ name, value, options }) => {
+              cookieStore.set({ name, value, ...options });
+            });
+          } catch {
+            // ignore cookie set failures
+          }
+        },
+      },
+    }
+  );
+
+  const { data: { user } } = await supabaseAuth.auth.getUser();
+  if (!user) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
   if (!GEMINI_API_KEY) {
     return NextResponse.json({ ok: false, error: 'GEMINI_API_KEY missing' }, { status: 500 });
   }
@@ -171,6 +200,32 @@ export async function POST(request: Request) {
 
     if (!text) {
       return NextResponse.json({ ok: false, error: 'empty_response' }, { status: 502 });
+    }
+
+    const usage = data?.usageMetadata as {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    } | undefined;
+
+    try {
+      const supabase = getSupabaseAdmin();
+      const { error: usageError } = await supabase.from('ai_usage').insert({
+        user_id: user.id,
+        feature: 'insights',
+        model: 'gemini-2.0-flash',
+        prompt_tokens: usage?.promptTokenCount ?? null,
+        completion_tokens: usage?.candidatesTokenCount ?? null,
+        total_tokens: usage?.totalTokenCount ?? null,
+        request_id: data?.responseId ?? null,
+        metadata: usage ?? null,
+      });
+
+      if (usageError) {
+        console.error('[ai/insights] usage insert failed', usageError);
+      }
+    } catch (usageErr) {
+      console.error('[ai/insights] usage insert crashed', usageErr);
     }
 
     return NextResponse.json({ ok: true, insight: text });
