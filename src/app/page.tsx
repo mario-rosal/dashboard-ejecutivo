@@ -122,6 +122,13 @@ export default function DashboardPage() {
   const totalExpense = Math.abs(transactions.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount || 0), 0));
   const profit = totalIncome - totalExpense;
   const margin = totalIncome ? (profit / totalIncome) * 100 : 0;
+  const hasTotals = totalIncome > 0 || totalExpense > 0;
+  const coveragePctRaw = totalExpense > 0 ? (totalIncome / totalExpense) * 100 : totalIncome > 0 ? 100 : 0;
+  const expensePctRaw = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : totalExpense > 0 ? 100 : 0;
+  const coveragePct = Math.min(100, Math.max(0, coveragePctRaw));
+  const expensePct = Math.min(100, Math.max(0, expensePctRaw));
+  const incomeSubText = hasTotals ? `Cobertura de gastos: ${coveragePctRaw.toFixed(0)}%` : 'Sin datos';
+  const expenseSubText = hasTotals ? `Peso sobre ingresos: ${expensePctRaw.toFixed(0)}%` : 'Sin datos';
 
   // Monthly aggregation for charts
   const monthlyAgg = React.useMemo(() => {
@@ -584,14 +591,16 @@ export default function DashboardPage() {
                   value={new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(totalIncome)}
                   icon={<TrendingUp size={64} className="text-green-400" />}
                   progressColor="green"
-                  progressValue={75}
+                  progressValue={coveragePct}
+                  subText={incomeSubText}
                 />
                 <KPICard
                   title="Gastos Totales"
                   value={new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(totalExpense)}
                   icon={<TrendingDown size={64} className="text-red-400" />}
                   progressColor="red"
-                  progressValue={45}
+                  progressValue={expensePct}
+                  subText={expenseSubText}
                 />
                 <div className="glass-panel p-4 flex flex-col justify-between h-32 bg-blue-900/10 border-blue-500/20">
                   <p className="text-blue-300 text-xs font-medium uppercase">Beneficio Neto</p>
