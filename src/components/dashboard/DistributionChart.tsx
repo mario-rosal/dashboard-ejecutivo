@@ -56,7 +56,7 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
     };
 
     return (
-        <GlassCard className="p-5 h-full w-full flex flex-col">
+        <GlassCard className="p-5 w-full flex flex-col min-h-[360px]">
             <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold text-white">Distribución</h3>
                 {/* Mode Toggles */}
@@ -76,7 +76,7 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
                 </div>
             </div>
 
-            <div className="relative flex-1 w-full min-h-[180px]">
+            <div className="relative flex-1 w-full min-h-[220px]">
                 <Doughnut data={chartData} options={options} />
 
                 {/* Center Text */}
