@@ -22,20 +22,25 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
         '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#6366f1'
     ];
 
+    const chartColors = currentData.map((_, index) => colors[index % colors.length]);
     const chartData = {
         labels: currentData.map(d => d.label),
         datasets: [{
             data: currentData.map(d => d.value),
-            backgroundColor: colors,
+            backgroundColor: chartColors,
             borderColor: '#18181b', // Card background color
             borderWidth: 2,
         }]
     };
 
+    const maxLegendItems = 6;
+    const legendItems = currentData.slice(0, maxLegendItems);
+    const remainingCount = currentData.length - legendItems.length;
+
     const options: ChartOptions<'doughnut'> = {
         responsive: true,
         maintainAspectRatio: false,
-        cutout: '75%',
+        cutout: '68%',
         plugins: {
             legend: {
                 display: false
@@ -51,8 +56,8 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
     };
 
     return (
-        <GlassCard className="p-6 h-[400px] w-full flex flex-col">
-            <div className="flex justify-between items-center mb-4">
+        <GlassCard className="p-5 h-full w-full flex flex-col">
+            <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold text-white">Distribución</h3>
                 {/* Mode Toggles */}
                 <div className="flex gap-1 bg-slate-800/50 p-1 rounded-full border border-white/5">
@@ -71,7 +76,7 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
                 </div>
             </div>
 
-            <div className="relative flex-1 w-full min-h-0">
+            <div className="relative flex-1 w-full min-h-[180px]">
                 <Doughnut data={chartData} options={options} />
 
                 {/* Center Text */}
@@ -88,6 +93,27 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
                         }).format(total)}
                     </span>
                 </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-slate-300">
+                {legendItems.map((item, index) => {
+                    const percent = total > 0 ? Math.round((item.value / total) * 100) : 0;
+                    return (
+                        <div key={`${item.label}-${index}`} className="flex items-center gap-2 min-w-0">
+                            <span
+                                className="h-2.5 w-2.5 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: chartColors[index] }}
+                            />
+                            <span className="truncate">{item.label}</span>
+                            <span className="ml-auto text-slate-500">{percent}%</span>
+                        </div>
+                    );
+                })}
+                {remainingCount > 0 && (
+                    <div className="text-[11px] text-slate-500">
+                        +{remainingCount} mas
+                    </div>
+                )}
             </div>
         </GlassCard>
     );

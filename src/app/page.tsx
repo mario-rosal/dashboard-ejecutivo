@@ -627,7 +627,7 @@ export default function DashboardPage() {
                       Desglose
                     </h3>
                   </div>
-                  <div className="h-[250px]">
+                  <div className="h-[300px]">
                     <DistributionChart incomeData={incomeDistribution} expenseData={expenseDistribution} />
                   </div>
                 </div>
