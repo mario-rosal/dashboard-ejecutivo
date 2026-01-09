@@ -132,6 +132,10 @@ function buildPrompt(payload: InsightRequest) {
 
 export async function POST(request: Request) {
   const cookieStore = await cookies();
+  const authHeader = request.headers.get('authorization');
+  const accessToken = authHeader?.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7)
+    : undefined;
   const supabaseAuth = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -148,12 +152,19 @@ export async function POST(request: Request) {
           }
         },
       },
+      global: accessToken
+        ? {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        : undefined,
     }
   );
 
   const { data: { user } } = await supabaseAuth.auth.getUser();
   if (!user) {
-    return new Response('Unauthorized', { status: 401 });
+    return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
   }
 
   if (!GEMINI_API_KEY) {

@@ -291,6 +291,14 @@ export default function DashboardPage() {
     setAiLoading(true);
     setAiError(null);
 
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setAiInsight(null);
+      setAiError('Debes iniciar sesion para generar el insight.');
+      setAiLoading(false);
+      return;
+    }
+
     const payload = {
       summary: {
         totalIncome,
@@ -309,7 +317,10 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/ai/insights', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
