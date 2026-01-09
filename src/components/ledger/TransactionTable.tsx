@@ -61,6 +61,7 @@ interface TransactionTableProps {
 
 export function TransactionTable({ initialData = [] }: TransactionTableProps) {
     const [data, setData] = useState<TransactionRow[]>(initialData);
+    const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
     const [sorting, setSorting] = useState<SortingState>([]);
     const [globalFilter, setGlobalFilter] = useState('');
 
@@ -69,11 +70,55 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
         setData(initialData);
     }, [initialData]);
 
+    useEffect(() => {
+        let active = true;
+
+        supabase
+            .from('categories')
+            .select('id,name')
+            .then(({ data: categoryRows, error }) => {
+                if (!active) return;
+                if (error) {
+                    console.error('Category fetch failed', error);
+                    return;
+                }
+                if (categoryRows) {
+                    const sorted = [...categoryRows].sort((a, b) => a.name.localeCompare(b.name));
+                    setCategories(sorted);
+                }
+            });
+
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    const categoryOptions = useMemo(() => {
+        if (categories.length > 0) {
+            return categories.map((category) => category.name);
+        }
+        return CATEGORY_OPTIONS;
+    }, [categories]);
+
+    const normalizeCategoryName = (value: string) =>
+        String(value ?? '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase()
+            .trim();
+
+    const categoryIdByName = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const category of categories) {
+            map.set(normalizeCategoryName(category.name), category.id);
+        }
+        return map;
+    }, [categories]);
+
     const persistUpdate = useCallback(
         <T extends EditableField>(rowId: string, columnId: T, value: EditableFieldValueMap[T]) => {
             const updates: Partial<TransactionUpdate> = {};
             if (columnId === 'description') updates.description = String(value);
-            if (columnId === 'category') updates.category = String(value);
             if (columnId === 'amount') updates.amount = Number(value);
 
             supabase
@@ -87,9 +132,62 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
         []
     );
 
+    const persistCategoryUpdate = useCallback(
+        async (rowId: string, categoryName: string, applyToMerchant: boolean) => {
+            const categoryId = categoryIdByName.get(normalizeCategoryName(categoryName));
+            if (!categoryId) {
+                console.error('Category not found for update', categoryName);
+                return { ok: false as const };
+            }
+
+            const res = await fetch(`/api/transactions/${rowId}/category`, {
+                method: 'PATCH',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({
+                    category_id: categoryId,
+                    apply_to_merchant: applyToMerchant,
+                    scope: 'user',
+                }),
+            });
+
+            if (!res.ok) {
+                console.error('Category update failed', await res.text());
+                return { ok: false as const };
+            }
+
+            return { ok: true as const, categoryId };
+        },
+        [categoryIdByName]
+    );
+
     // Update local state when cell is edited
     const updateData = useCallback(
         <T extends EditableField>(rowIndex: number, columnId: T, value: EditableFieldValueMap[T]) => {
+            if (columnId === 'category') {
+                const row = data[rowIndex];
+                if (!row?.id) return;
+
+                const applyToMerchant = Boolean(row.merchant_normalized);
+                persistCategoryUpdate(row.id, String(value), applyToMerchant).then((result) => {
+                    if (!result.ok) return;
+                    setData((old) =>
+                        old.map((rowItem, index) =>
+                            index === rowIndex
+                                ? {
+                                    ...rowItem,
+                                    category: String(value),
+                                    category_id: result.categoryId,
+                                    category_source: 'user',
+                                }
+                                : rowItem
+                        )
+                    );
+                });
+                return;
+            }
+
             setData((old) =>
                 old.map((row, index) => {
                     if (index === rowIndex) {
@@ -110,7 +208,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                 })
             );
         },
-        [persistUpdate]
+        [data, persistCategoryUpdate, persistUpdate]
     );
 
     const columns = useMemo<ColumnDef<TransactionRow>[]>(
@@ -147,7 +245,7 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                     <EditableCell
                         value={getValue() as string}
                         type="select"
-                        options={CATEGORY_OPTIONS}
+                        options={categoryOptions}
                         onSave={(val) => updateData(row.index, 'category', String(val))}
                     />
                 ),
