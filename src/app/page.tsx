@@ -142,6 +142,20 @@ export default function DashboardPage() {
     ? monthlyAgg.reduce((acc, m) => acc + (m.income - m.expense), 0) / monthlyAgg.length
     : 0;
 
+  const breakEvenWindow = 3;
+  const recentMonths = monthlyAgg.slice(-breakEvenWindow);
+  const recentNet = recentMonths.length
+    ? recentMonths.reduce((acc, m) => acc + (m.income - m.expense), 0) / recentMonths.length
+    : averageMonthlyNet;
+  const breakEvenOk = recentNet >= 0;
+  const breakEvenLabel = breakEvenOk ? 'Equilibrio alcanzado' : 'Equilibrio pendiente';
+  const breakEvenMessage = breakEvenOk
+    ? 'En zona de beneficios'
+    : `Faltan ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Math.abs(recentNet))}/mes`;
+  const breakEvenDetail = recentMonths.length
+    ? `Promedio ultimos ${recentMonths.length} meses`
+    : 'Promedio historico';
+
   const currentBalance = transactions.reduce((acc, t) => acc + Number(t.amount || 0), 0);
 
   const runwayProjection = React.useMemo(() => {
@@ -573,10 +587,18 @@ export default function DashboardPage() {
                   <h2 className="text-3xl font-bold text-blue-50">{new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(profit)}</h2>
                   <p className="text-xs text-blue-400">Margen: {margin.toFixed(1)}%</p>
                 </div>
-                <div className="glass-panel p-4 flex flex-col justify-center items-center text-center relative border border-green-500/30 bg-green-900/10">
-                  <Target className="w-8 h-8 text-green-400 mb-2" />
+                <div
+                  className={`glass-panel p-4 flex flex-col justify-center items-center text-center relative border ${breakEvenOk ? 'border-green-500/30 bg-green-900/10' : 'border-amber-500/30 bg-amber-900/10'}`}
+                >
+                  <Target className={`w-8 h-8 mb-2 ${breakEvenOk ? 'text-green-400' : 'text-amber-400'}`} />
                   <p className="text-xs text-slate-400">Punto de Equilibrio</p>
-                  <p className="text-sm font-bold text-green-200 mt-1">En zona de beneficios!</p>
+                  <p className={`text-sm font-bold mt-1 ${breakEvenOk ? 'text-green-200' : 'text-amber-200'}`}>
+                    {breakEvenMessage}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-1">{breakEvenDetail}</p>
+                  <p className={`text-[10px] uppercase tracking-wide mt-2 ${breakEvenOk ? 'text-green-300' : 'text-amber-300'}`}>
+                    {breakEvenLabel}
+                  </p>
                 </div>
               </div>
 
