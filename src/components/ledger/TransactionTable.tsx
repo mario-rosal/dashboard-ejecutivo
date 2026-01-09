@@ -57,9 +57,10 @@ type EditableField = keyof EditableFieldValueMap;
 
 interface TransactionTableProps {
     initialData?: TransactionRow[];
+    onTransactionUpdate?: (transaction: TransactionRow) => void;
 }
 
-export function TransactionTable({ initialData = [] }: TransactionTableProps) {
+export function TransactionTable({ initialData = [], onTransactionUpdate }: TransactionTableProps) {
     const [data, setData] = useState<TransactionRow[]>(initialData);
     const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
     const [sorting, setSorting] = useState<SortingState>([]);
@@ -172,6 +173,12 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                 const applyToMerchant = Boolean(row.merchant_normalized);
                 persistCategoryUpdate(row.id, String(value), applyToMerchant).then((result) => {
                     if (!result.ok) return;
+                    const updatedRow: TransactionRow = {
+                        ...row,
+                        category: String(value),
+                        category_id: result.categoryId,
+                        category_source: 'user',
+                    };
                     setData((old) =>
                         old.map((rowItem, index) =>
                             index === rowIndex
@@ -184,10 +191,17 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                                 : rowItem
                         )
                     );
+                    onTransactionUpdate?.(updatedRow);
                 });
                 return;
             }
 
+            const currentRow = data[rowIndex];
+            if (!currentRow) return;
+            const updatedRow: TransactionRow = {
+                ...currentRow,
+                [columnId]: value,
+            };
             setData((old) =>
                 old.map((row, index) => {
                     if (index === rowIndex) {
@@ -207,9 +221,25 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                     return row;
                 })
             );
+            onTransactionUpdate?.(updatedRow);
         },
-        [data, persistCategoryUpdate, persistUpdate]
+        [data, onTransactionUpdate, persistCategoryUpdate, persistUpdate]
     );
+
+    const columnWidthClass = useCallback((columnId: string) => {
+        switch (columnId) {
+            case 'date':
+                return 'w-[12%] min-w-[110px] whitespace-nowrap';
+            case 'description':
+                return 'w-[52%] min-w-[320px]';
+            case 'category':
+                return 'w-[24%] min-w-[180px]';
+            case 'amount':
+                return 'w-[12%] min-w-[120px] whitespace-nowrap';
+            default:
+                return '';
+        }
+    }, []);
 
     const columns = useMemo<ColumnDef<TransactionRow>[]>(
         () => [
@@ -234,6 +264,9 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                 cell: ({ getValue, row }) => (
                     <EditableCell
                         value={getValue() as string}
+                        containerClassName="w-full"
+                        displayClassName="max-w-[520px]"
+                        inputClassName="w-full min-w-[280px]"
                         onSave={(val) => updateData(row.index, 'description', String(val))}
                     />
                 ),
@@ -246,6 +279,9 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                         value={getValue() as string}
                         type="select"
                         options={categoryOptions}
+                        containerClassName="w-full"
+                        displayClassName="max-w-[260px]"
+                        inputClassName="w-full max-w-[240px]"
                         onSave={(val) => updateData(row.index, 'category', String(val))}
                     />
                 ),
@@ -314,12 +350,15 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
             </div>
 
             <div className="rounded-lg border border-zinc-800 overflow-hidden">
-                <table className="w-full text-sm text-left">
+                <table className="w-full text-sm text-left table-fixed">
                     <thead className="bg-zinc-900/80 text-zinc-400 uppercase text-xs">
                         {table.getHeaderGroups().map((headerGroup) => (
                             <tr key={headerGroup.id}>
                                 {headerGroup.headers.map((header) => (
-                                    <th key={header.id} className="px-6 py-3 font-medium">
+                                    <th
+                                        key={header.id}
+                                        className={cn("px-6 py-3 font-medium", columnWidthClass(header.column.id))}
+                                    >
                                         {header.isPlaceholder
                                             ? null
                                             : flexRender(
@@ -342,7 +381,10 @@ export function TransactionTable({ initialData = [] }: TransactionTableProps) {
                                     )}
                                 >
                                     {row.getVisibleCells().map((cell) => (
-                                        <td key={cell.id} className="px-6 py-4 relative">
+                                        <td
+                                            key={cell.id}
+                                            className={cn("px-6 py-4 relative", columnWidthClass(cell.column.id))}
+                                        >
                                             {row.original.is_anomaly && cell.column.id === 'date' && (
                                                 <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" title="Anomaly Detected" />
                                             )}

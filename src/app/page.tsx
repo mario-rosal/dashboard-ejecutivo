@@ -73,6 +73,12 @@ export default function DashboardPage() {
     setTransactions(data || []);
   }, []);
 
+  const handleTransactionUpdate = React.useCallback((updated: TransactionRow) => {
+    setTransactions((prev) =>
+      prev.map((tx) => (tx.id === updated.id ? { ...tx, ...updated } : tx))
+    );
+  }, []);
+
   const hashFile = React.useCallback(async (file: File) => {
     const buffer = await file.arrayBuffer();
     const digest = await crypto.subtle.digest('SHA-256', buffer);
@@ -650,7 +656,7 @@ export default function DashboardPage() {
                   <input type="text" placeholder="Buscar concepto..." className="w-full bg-slate-900/50 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" />
                 </div>
               </div>
-              <TransactionTable initialData={transactions} />
+              <TransactionTable initialData={transactions} onTransactionUpdate={handleTransactionUpdate} />
             </div>
           )}
         </main>

@@ -2,15 +2,27 @@
 
 import { useState, useEffect } from "react";
 import { Check, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface EditableCellProps {
     value: string | number;
     onSave: (newValue: string | number) => void;
     type?: "text" | "number" | "currency" | "select";
     options?: string[]; // For select type
+    containerClassName?: string;
+    displayClassName?: string;
+    inputClassName?: string;
 }
 
-export function EditableCell({ value: initialValue, onSave, type = "text", options = [] }: EditableCellProps) {
+export function EditableCell({
+    value: initialValue,
+    onSave,
+    type = "text",
+    options = [],
+    containerClassName,
+    displayClassName,
+    inputClassName,
+}: EditableCellProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [value, setValue] = useState(initialValue);
 
@@ -33,7 +45,10 @@ export function EditableCell({ value: initialValue, onSave, type = "text", optio
             return (
                 <div className="flex items-center gap-1">
                     <select
-                        className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500"
+                        className={cn(
+                            "bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500",
+                            inputClassName
+                        )}
                         value={value}
                         onChange={(e) => setValue(e.target.value)}
                         autoFocus
@@ -51,7 +66,10 @@ export function EditableCell({ value: initialValue, onSave, type = "text", optio
         return (
             <div className="flex items-center gap-1">
                 <input
-                    className="bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs w-24 text-white focus:outline-none focus:border-emerald-500"
+                    className={cn(
+                        "bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs w-24 text-white focus:outline-none focus:border-emerald-500",
+                        inputClassName
+                    )}
                     value={value}
                     onChange={(e) => setValue(type === 'number' || type === 'currency' ? e.target.value : e.target.value)}
                     type={type === 'number' || type === 'currency' ? 'number' : 'text'}
@@ -65,10 +83,13 @@ export function EditableCell({ value: initialValue, onSave, type = "text", optio
 
     return (
         <div
-            className="cursor-pointer hover:bg-white/5 px-2 py-1 rounded transition-colors group flex items-center gap-2"
+            className={cn(
+                "cursor-pointer hover:bg-white/5 px-2 py-1 rounded transition-colors group flex items-center gap-2",
+                containerClassName
+            )}
             onClick={() => setIsEditing(true)}
         >
-            <span className="truncate max-w-[150px]">
+            <span className={cn("truncate max-w-[150px]", displayClassName)}>
                 {type === 'currency'
                     ? new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(value))
                     : value
