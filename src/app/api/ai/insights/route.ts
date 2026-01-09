@@ -23,6 +23,44 @@ function buildPrompt(payload: InsightRequest) {
   const { summary, monthlyAgg, topIncomeCategories, topExpenseCategories, warnings } = payload;
 
   const lines: string[] = [];
+  const lastTwo = monthlyAgg && monthlyAgg.length >= 2 ? monthlyAgg.slice(-2) : null;
+  const lastMonth = lastTwo ? lastTwo[1] : null;
+  const prevMonth = lastTwo ? lastTwo[0] : null;
+  const lastNet = lastMonth ? lastMonth.income - lastMonth.expense : null;
+  const prevNet = prevMonth ? prevMonth.income - prevMonth.expense : null;
+  const netDelta = lastNet !== null && prevNet !== null ? lastNet - prevNet : null;
+  const incomeDelta = lastMonth && prevMonth ? lastMonth.income - prevMonth.income : null;
+  const expenseDelta = lastMonth && prevMonth ? lastMonth.expense - prevMonth.expense : null;
+  const incomeDeltaPct =
+    incomeDelta !== null && prevMonth && prevMonth.income > 0
+      ? (incomeDelta / prevMonth.income) * 100
+      : null;
+  const expenseDeltaPct =
+    expenseDelta !== null && prevMonth && prevMonth.expense > 0
+      ? (expenseDelta / prevMonth.expense) * 100
+      : null;
+  const topExpenseSum = topExpenseCategories
+    ? topExpenseCategories.reduce((acc, curr) => acc + curr.value, 0)
+    : null;
+  const topIncomeSum = topIncomeCategories
+    ? topIncomeCategories.reduce((acc, curr) => acc + curr.value, 0)
+    : null;
+  const expenseTopCoverage =
+    summary?.totalExpense !== undefined && topExpenseSum !== null && summary.totalExpense > 0
+      ? (topExpenseSum / summary.totalExpense) * 100
+      : null;
+  const incomeTopCoverage =
+    summary?.totalIncome !== undefined && topIncomeSum !== null && summary.totalIncome > 0
+      ? (topIncomeSum / summary.totalIncome) * 100
+      : null;
+  const runwayMonths =
+    summary?.currentBalance !== undefined &&
+    summary?.averageMonthlyNet !== undefined &&
+    summary.currentBalance > 0 &&
+    summary.averageMonthlyNet < 0
+      ? summary.currentBalance / Math.abs(summary.averageMonthlyNet)
+      : null;
+
   if (summary) {
     lines.push('Resumen actual:');
     if (summary.currentBalance !== undefined) lines.push(`- Caja actual: ${summary.currentBalance}`);
@@ -31,6 +69,27 @@ function buildPrompt(payload: InsightRequest) {
     if (summary.profit !== undefined) lines.push(`- Resultado mes: ${summary.profit}`);
     if (summary.margin !== undefined) lines.push(`- Margen: ${summary.margin}%`);
     if (summary.averageMonthlyNet !== undefined) lines.push(`- Net mensual medio: ${summary.averageMonthlyNet}`);
+  }
+
+  if (lastMonth && prevMonth) {
+    lines.push('\nVariaciones recientes:');
+    lines.push(`- Mes actual: ${lastMonth.month} | neto ${lastNet}`);
+    lines.push(`- Mes previo: ${prevMonth.month} | neto ${prevNet}`);
+    if (netDelta !== null) lines.push(`- Cambio de neto: ${netDelta}`);
+    if (incomeDelta !== null) lines.push(`- Variacion ingresos: ${incomeDelta}`);
+    if (incomeDeltaPct !== null) lines.push(`- Variacion ingresos %: ${incomeDeltaPct.toFixed(1)}`);
+    if (expenseDelta !== null) lines.push(`- Variacion gastos: ${expenseDelta}`);
+    if (expenseDeltaPct !== null) lines.push(`- Variacion gastos %: ${expenseDeltaPct.toFixed(1)}`);
+  }
+
+  if (expenseTopCoverage !== null) {
+    lines.push(`\nConcentracion gastos (top 5): al menos ${expenseTopCoverage.toFixed(1)}% del total`);
+  }
+  if (incomeTopCoverage !== null) {
+    lines.push(`\nConcentracion ingresos (top 5): al menos ${incomeTopCoverage.toFixed(1)}% del total`);
+  }
+  if (runwayMonths !== null) {
+    lines.push(`\nRunway estimado (meses): ${runwayMonths.toFixed(1)}`);
   }
 
   if (monthlyAgg && monthlyAgg.length) {
@@ -56,7 +115,12 @@ function buildPrompt(payload: InsightRequest) {
   }
 
   lines.push(
-    '\nEres un CFO asistente. Genera un informe breve y accionable en 3-4 puntos: 1) Estado de caja y tendencia, 2) Riesgos especificos, 3) Oportunidades/ahorros concretos, 4) Siguiente accion priorizada. Se directo y especifico. Responde en espanol.'
+    '\nEres un CFO asistente. Usa SOLO los datos listados arriba; no inventes cifras, tendencias ni causas. ' +
+      'Si falta informacion, indica "Datos insuficientes". ' +
+      'No repitas los valores obvios; entrega insights de valor para un empresario. ' +
+      'Entrega 3-4 bullets con este formato: "Hallazgo -> Implicacion -> Accion". ' +
+      'Incluye al menos: 1) caja/tendencia con dato, 2) riesgo concreto, 3) oportunidad/ahorro con foco en categorias, 4) siguiente accion priorizada. ' +
+      'Responde en espanol.'
   );
 
   return lines.join('\n');
@@ -86,7 +150,7 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.35, maxOutputTokens: 400 },
+          generationConfig: { temperature: 0.2, maxOutputTokens: 400 },
         }),
       }
     );
