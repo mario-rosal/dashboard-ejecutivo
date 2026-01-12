@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  BarChart4, FileInput, Activity, LayoutDashboard, List,
+  BarChart4, FileInput, Activity, LayoutDashboard, List, Bell,
   TrendingUp, TrendingDown, Target, LineChart, Search, Table2
 } from 'lucide-react';
 
@@ -14,9 +14,15 @@ import { DistributionChart } from '@/components/dashboard/DistributionChart';
 import { TransactionTable } from '@/components/ledger/TransactionTable';
 import { RunwayChart } from '@/components/projections/RunwayChart';
 import { NotificationPanel } from '@/components/ui/NotificationPanel';
-import type { Notification } from '@/components/ui/NotificationPanel';
+import type { Notification, NotificationAction } from '@/components/ui/NotificationPanel';
+import { AlertSettingsPanel } from '@/components/alerts/AlertSettingsPanel';
 import { parseFinancialFile } from '@/lib/ingest/excelProcessor';
 import { uploadPdfToWebhook } from '@/lib/ingest/pdfPipeline';
+import {
+  ALERT_RULE_DEFINITIONS,
+  type AlertRuleConfig,
+  type AlertRuleKey,
+} from '@/lib/alerts/definitions';
 
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
@@ -25,6 +31,9 @@ import { Database } from '@/types/database.types';
 
 type TransactionRow = Database['public']['Tables']['transactions']['Row'];
 type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
+type AlertRuleRow = Database['public']['Tables']['alert_rules']['Row'];
+type AlertExclusionRow = Database['public']['Tables']['alert_exclusions']['Row'];
+type AlertEventRow = Database['public']['Tables']['alert_events']['Row'];
 
 const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 const formatCurrency = (value: number) => currencyFormatter.format(value);
@@ -55,18 +64,54 @@ const normalizeText = (value: string | null | undefined) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-type AlertSignal = Notification & { priority: number; impact?: number };
+type AlertPayload = {
+  filterValue?: string;
+  merchant?: string;
+  category?: string;
+  description?: string;
+  amount?: number;
+};
+
+type AlertSignal = {
+  ruleKey: AlertRuleKey;
+  dedupeKey: string;
+  type: Notification['type'];
+  title: string;
+  message: string;
+  detail?: string;
+  eventAt?: string;
+  payload?: AlertPayload;
+  priority: number;
+  impact?: number;
+};
+
+type AlertEventInput = {
+  rule_key: string;
+  dedupe_key: string;
+  severity: Database['public']['Enums']['alert_severity'];
+  title: string;
+  message: string;
+  detail?: string | null;
+  event_at?: string;
+  payload?: Database['public']['Tables']['alert_events']['Row']['payload'];
+};
 
 export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions'>('dashboard');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isAlertSettingsOpen, setIsAlertSettingsOpen] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [transactionFilter, setTransactionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [alertRules, setAlertRules] = useState<AlertRuleRow[]>([]);
+  const [alertExclusions, setAlertExclusions] = useState<AlertExclusionRow[]>([]);
+  const [alertEvents, setAlertEvents] = useState<AlertEventRow[]>([]);
+  const [alertSettingsLoading, setAlertSettingsLoading] = useState(true);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
 
   React.useEffect(() => {
     const init = async () => {
@@ -75,12 +120,16 @@ export default function DashboardPage() {
         router.push('/login');
         return;
       }
+      setAccessToken(session.access_token);
 
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .order('date', { ascending: false });
+      const [{ data, error }] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('date', { ascending: false }),
+        fetchAlertSettings(session.access_token),
+      ]);
 
       if (error) console.error('Error fetching transactions:', error);
       else setTransactions(data || []);
@@ -89,7 +138,7 @@ export default function DashboardPage() {
     };
 
     init();
-  }, [router]);
+  }, [fetchAlertSettings, router]);
 
   const fetchTransactionsForUser = React.useCallback(async (uid: string) => {
     const { data, error } = await supabase
@@ -111,6 +160,249 @@ export default function DashboardPage() {
     );
   }, []);
 
+  const fetchAlertSettings = React.useCallback(async (token: string) => {
+    setAlertSettingsLoading(true);
+    try {
+      const [rulesRes, exclusionsRes] = await Promise.all([
+        fetch('/api/alerts/rules', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+        fetch('/api/alerts/exclusions', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }),
+      ]);
+
+      const rulesPayload = await rulesRes.json();
+      const exclusionsPayload = await exclusionsRes.json();
+
+      if (rulesRes.ok && rulesPayload?.rules) {
+        setAlertRules(rulesPayload.rules);
+      }
+      if (exclusionsRes.ok && exclusionsPayload?.exclusions) {
+        setAlertExclusions(exclusionsPayload.exclusions.filter((exclusion: AlertExclusionRow) => exclusion.is_active));
+      }
+    } catch (error) {
+      console.error('Error fetching alert settings:', error);
+    } finally {
+      setAlertSettingsLoading(false);
+    }
+  }, []);
+
+  const saveAlertRules = React.useCallback(
+    async (token: string, rules: Array<{ rule_key: string; is_active: boolean; config: AlertRuleConfig }>) => {
+      const res = await fetch('/api/alerts/rules', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ rules }),
+      });
+
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.error || 'rules_update_failed');
+      }
+
+      if (payload?.rules) {
+        setAlertRules(payload.rules);
+      }
+    },
+    []
+  );
+
+  const addAlertExclusion = React.useCallback(
+    async (
+      token: string,
+      exclusion: {
+        match_type: string;
+        match_value: string;
+        rule_key?: string | null;
+        min_amount?: number | null;
+        max_amount?: number | null;
+      }
+    ) => {
+      const res = await fetch('/api/alerts/exclusions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(exclusion),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.error || 'exclusion_insert_failed');
+      }
+      if (payload?.exclusion) {
+        setAlertExclusions((prev) => [payload.exclusion, ...prev]);
+      }
+    },
+    []
+  );
+
+  const removeAlertExclusion = React.useCallback(async (token: string, exclusionId: string) => {
+    const res = await fetch(`/api/alerts/exclusions/${exclusionId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null);
+      throw new Error(payload?.error || 'exclusion_delete_failed');
+    }
+    setAlertExclusions((prev) => prev.filter((exclusion) => exclusion.id !== exclusionId));
+  }, []);
+
+  const updateAlertEventStatus = React.useCallback(
+    async (token: string, eventId: string, status: 'open' | 'ignored' | 'dismissed') => {
+      const res = await fetch(`/api/alerts/events/${eventId}`, {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.error || 'event_update_failed');
+      }
+      if (payload?.event) {
+        setAlertEvents((prev) =>
+          status === 'open' ? prev : prev.filter((event) => event.id !== payload.event.id)
+        );
+      }
+    },
+    []
+  );
+
+  const syncAlertEvents = React.useCallback(
+    async (token: string, events: AlertEventInput[]) => {
+      const res = await fetch('/api/alerts/sync', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ events }),
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload?.error || 'events_sync_failed');
+      }
+      if (payload?.events) {
+        setAlertEvents(payload.events);
+      }
+    },
+    []
+  );
+
+  const handleMarkRecurring = React.useCallback(
+    async (event: AlertEventRow, payload: AlertPayload) => {
+      if (!accessToken) return;
+      const matchValue = payload.merchant || payload.category || payload.description;
+      if (!matchValue) return;
+      const matchType = payload.merchant ? 'merchant' : payload.category ? 'category' : 'description';
+
+      try {
+        await addAlertExclusion(accessToken, {
+          match_type: matchType,
+          match_value: matchValue,
+          rule_key: event.rule_key,
+        });
+        await updateAlertEventStatus(accessToken, event.id, 'dismissed');
+      } catch (error) {
+        console.error('Error creating exclusion:', error);
+      }
+    },
+    [accessToken, addAlertExclusion, updateAlertEventStatus]
+  );
+
+  const buildNotificationActions = React.useCallback(
+    (event: AlertEventRow) => {
+      if (!accessToken) return [];
+      const payload =
+        event.payload && typeof event.payload === 'object' ? (event.payload as AlertPayload) : ({} as AlertPayload);
+      const actions: NotificationAction[] = [];
+
+      if (payload.filterValue) {
+        actions.push(createFilterAction('Ver movimientos', payload.filterValue));
+      }
+
+      if (payload.merchant || payload.category || payload.description) {
+        actions.push({
+          label: 'Marcar recurrente',
+          tone: 'secondary' as const,
+          onClick: () => {
+            void handleMarkRecurring(event, payload);
+          },
+        });
+      }
+
+      actions.push({
+        label: 'Ignorar',
+        tone: 'secondary' as const,
+        onClick: () => {
+          void updateAlertEventStatus(accessToken, event.id, 'ignored');
+        },
+      });
+
+      actions.push({
+        label: 'Eliminar',
+        tone: 'danger' as const,
+        onClick: () => {
+          void updateAlertEventStatus(accessToken, event.id, 'dismissed');
+        },
+      });
+
+      return actions;
+    },
+    [accessToken, createFilterAction, handleMarkRecurring, updateAlertEventStatus]
+  );
+
+  const handleSaveAlertRules = React.useCallback(
+    async (rules: Array<{ rule_key: AlertRuleKey; is_active: boolean; config: AlertRuleConfig }>) => {
+      if (!accessToken) return;
+      await saveAlertRules(
+        accessToken,
+        rules.map((rule) => ({
+          rule_key: rule.rule_key,
+          is_active: rule.is_active,
+          config: rule.config,
+        }))
+      );
+    },
+    [accessToken, saveAlertRules]
+  );
+
+  const handleAddAlertExclusion = React.useCallback(
+    async (exclusion: {
+      match_type: string;
+      match_value: string;
+      rule_key?: string | null;
+      min_amount?: number | null;
+      max_amount?: number | null;
+    }) => {
+      if (!accessToken) return;
+      await addAlertExclusion(accessToken, exclusion);
+    },
+    [accessToken, addAlertExclusion]
+  );
+
+  const handleRemoveAlertExclusion = React.useCallback(
+    async (exclusionId: string) => {
+      if (!accessToken) return;
+      await removeAlertExclusion(accessToken, exclusionId);
+    },
+    [accessToken, removeAlertExclusion]
+  );
+
   const openTransactionsWithFilter = React.useCallback(
     (filterValue: string) => {
       setActiveTab('transactions');
@@ -124,8 +416,66 @@ export default function DashboardPage() {
     (label: string, filterValue: string) => ({
       label,
       onClick: () => openTransactionsWithFilter(filterValue),
+      tone: 'primary' as const,
     }),
     [openTransactionsWithFilter]
+  );
+
+  const ruleMap = React.useMemo(() => {
+    const map = new Map<AlertRuleKey, AlertRuleRow>();
+    alertRules.forEach((rule) => {
+      if (ALERT_RULE_DEFINITIONS.find((def) => def.key === rule.rule_key)) {
+        map.set(rule.rule_key as AlertRuleKey, rule);
+      }
+    });
+    return map;
+  }, [alertRules]);
+
+  const getRuleConfig = React.useCallback(
+    (ruleKey: AlertRuleKey) => {
+      const definition = ALERT_RULE_DEFINITIONS.find((rule) => rule.key === ruleKey);
+      const stored = ruleMap.get(ruleKey);
+      const storedConfig =
+        stored?.config && typeof stored.config === 'object' ? (stored.config as AlertRuleConfig) : {};
+      return {
+        isActive: stored?.is_active ?? true,
+        config: {
+          ...(definition?.defaultConfig ?? {}),
+          ...storedConfig,
+        },
+      };
+    },
+    [ruleMap]
+  );
+
+  const activeExclusions = React.useMemo(
+    () => alertExclusions.filter((exclusion) => exclusion.is_active),
+    [alertExclusions]
+  );
+
+  const shouldExcludeAlert = React.useCallback(
+    (ruleKey: AlertRuleKey, payload: AlertPayload) => {
+      const amount = payload.amount ?? null;
+      const merchant = payload.merchant ? normalizeText(payload.merchant) : '';
+      const category = payload.category ? normalizeText(payload.category) : '';
+      const description = payload.description ? normalizeText(payload.description) : '';
+
+      return activeExclusions.some((exclusion) => {
+        if (exclusion.rule_key && exclusion.rule_key !== ruleKey) return false;
+
+        if (exclusion.match_type === 'merchant' && merchant !== exclusion.match_value_normalized) return false;
+        if (exclusion.match_type === 'category' && category !== exclusion.match_value_normalized) return false;
+        if (exclusion.match_type === 'description' && description !== exclusion.match_value_normalized) return false;
+
+        if (exclusion.min_amount !== null && amount === null) return false;
+        if (exclusion.min_amount !== null && amount !== null && amount < exclusion.min_amount) return false;
+        if (exclusion.max_amount !== null && amount === null) return false;
+        if (exclusion.max_amount !== null && amount !== null && amount > exclusion.max_amount) return false;
+
+        return true;
+      });
+    },
+    [activeExclusions]
   );
 
   const hashFile = React.useCallback(async (file: File) => {
@@ -301,55 +651,402 @@ export default function DashboardPage() {
     return ((current.income - previous.income) / previous.income) * 100;
   }, [monthlyAgg]);
 
-  // Detect Anomalies (Simple: Outliers > 3x Avg Expense)
-  const anomalies = React.useMemo<AlertSignal[]>(() => {
+  // Detect Alerts (Rules + Comparisons)
+  const alertCandidates = React.useMemo<AlertSignal[]>(() => {
+    if (transactions.length === 0) return [];
+
     const alerts: AlertSignal[] = [];
-    const expenses = transactions.filter(
-      (t) => t.type === 'expense' || (t.amount < 0 && t.type !== 'income')
-    );
+    const now = new Date();
+    const windowStart = (days: number) => {
+      const d = new Date(now);
+      d.setDate(now.getDate() - days);
+      return d;
+    };
+    const sumAbs = (items: Array<TransactionRow>) =>
+      items.reduce((acc, t) => acc + Math.abs(Number(t.amount) || 0), 0);
 
-    if (expenses.length > 5) {
-      const avgExpense = Math.abs(
-        expenses.reduce((acc, t) => acc + Number(t.amount || 0), 0) / expenses.length
-      );
+    const dated = transactions
+      .map((t) => {
+        const dateObj = safeParseDate(t.date);
+        return dateObj ? { ...t, dateObj } : null;
+      })
+      .filter(Boolean) as Array<TransactionRow & { dateObj: Date }>;
 
-      if (avgExpense > 0) {
-        const outliers = expenses
-          .filter((t) => Math.abs(Number(t.amount)) > avgExpense * 3)
-          .sort((a, b) => Math.abs(Number(b.amount)) - Math.abs(Number(a.amount)));
+    const isExpense = (t: TransactionRow) => t.type === 'expense' || Number(t.amount) < 0;
+    const isIncome = (t: TransactionRow) => t.type === 'income' || Number(t.amount) > 0;
 
-        const seen = new Set<string>();
-        for (const t of outliers) {
-          const desc =
-            t.description || t.merchant_normalized || t.description_clean || t.description_raw || 'Movimiento';
-          const normalizedDesc = normalizeText(desc);
-          const amountCents = Math.round(Math.abs(Number(t.amount)) * 100);
-          const key = `${normalizedDesc}|${amountCents}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
+    const expenses = dated.filter(isExpense);
+    const incomes = dated.filter(isIncome);
 
-          const absAmount = Math.abs(Number(t.amount) || 0);
-          const txnDate = safeParseDate(t.date);
+    const expenseRule = getRuleConfig('expense_outlier');
+    if (expenseRule.isActive && expenses.length > 0) {
+      const windowDays = expenseRule.config.window_days ?? 90;
+      const minAmount = expenseRule.config.min_amount ?? 0;
+      const multiplier = expenseRule.config.multiplier ?? 3;
+      const maxAlerts = expenseRule.config.max_alerts ?? 3;
+      const start = windowStart(windowDays);
+      const windowExpenses = expenses.filter((t) => t.dateObj >= start);
+      if (windowExpenses.length > 5) {
+        const avgExpense = Math.abs(
+          windowExpenses.reduce((acc, t) => acc + Number(t.amount || 0), 0) / windowExpenses.length
+        );
 
-          alerts.push({
-            id: `anom-${t.id ?? key}`,
-            type: 'warning',
-            title: 'Gasto inusual',
-            message: `${desc} (${formatCurrency(absAmount)}) supera 3x el promedio.`,
-            detail: `Promedio: ${formatCurrency(avgExpense)} | Umbral: ${formatCurrency(avgExpense * 3)}`,
-            timestamp: txnDate ? formatRelativeDays(txnDate) : 'reciente',
-            priority: 90,
-            impact: absAmount,
-            action: desc ? createFilterAction('Revisar movimiento', desc) : undefined,
-          });
+        if (avgExpense > 0) {
+          const outliers = windowExpenses
+            .filter((t) => Math.abs(Number(t.amount)) > avgExpense * multiplier)
+            .sort((a, b) => Math.abs(Number(b.amount)) - Math.abs(Number(a.amount)));
 
-          if (alerts.length >= 3) break;
+          const seen = new Set<string>();
+          for (const t of outliers) {
+            const desc =
+              t.description || t.merchant_normalized || t.description_clean || t.description_raw || 'Movimiento';
+            const normalizedDesc = normalizeText(desc);
+            const amountCents = Math.round(Math.abs(Number(t.amount)) * 100);
+            const key = `${normalizedDesc}|${amountCents}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+
+            const absAmount = Math.abs(Number(t.amount) || 0);
+            if (absAmount < minAmount) continue;
+
+            const payload = {
+              description: desc,
+              merchant: t.merchant_raw ?? t.merchant_normalized ?? undefined,
+              category: t.category ?? undefined,
+              amount: absAmount,
+              filterValue: desc,
+            };
+
+            if (shouldExcludeAlert('expense_outlier', payload)) continue;
+
+            alerts.push({
+              ruleKey: 'expense_outlier',
+              dedupeKey: t.id ?? `${key}|${String(t.date).slice(0, 10)}`,
+              type: 'warning',
+              title: 'Gasto inusual',
+              message: `${desc} (${formatCurrency(absAmount)}) supera ${multiplier.toFixed(1)}x el promedio.`,
+              detail: `Promedio: ${formatCurrency(avgExpense)} | Umbral: ${formatCurrency(avgExpense * multiplier)}`,
+              eventAt: t.date,
+              payload,
+              priority: 90,
+              impact: absAmount,
+            });
+
+            if (alerts.filter((alert) => alert.ruleKey === 'expense_outlier').length >= maxAlerts) break;
+          }
         }
       }
     }
 
+    const incomeRule = getRuleConfig('income_drop');
+    if (incomeRule.isActive && incomes.length > 0) {
+      const windowDays = incomeRule.config.window_days ?? 30;
+      const baselineDays = incomeRule.config.baseline_days ?? windowDays;
+      const minPct = incomeRule.config.min_pct ?? 0.2;
+      const minAmount = incomeRule.config.min_amount ?? 500;
+      const currentStart = windowStart(windowDays);
+      const baselineStart = windowStart(windowDays + baselineDays);
+
+      const currentIncome = incomes.filter((t) => t.dateObj >= currentStart);
+      const baselineIncome = incomes.filter((t) => t.dateObj >= baselineStart && t.dateObj < currentStart);
+      const currentTotal = sumAbs(currentIncome);
+      const baselineTotal = sumAbs(baselineIncome);
+
+      if (baselineTotal > 0) {
+        const dropAmount = baselineTotal - currentTotal;
+        const dropPct = dropAmount / baselineTotal;
+        if (dropAmount >= minAmount && dropPct >= minPct) {
+          alerts.push({
+            ruleKey: 'income_drop',
+            dedupeKey: `income-drop-${currentStart.toISOString().slice(0, 10)}`,
+            type: dropPct >= 0.4 ? 'danger' : 'warning',
+            title: 'Ingresos a la baja',
+            message: `-${(dropPct * 100).toFixed(0)}% vs periodo anterior`,
+            detail: `De ${formatCurrency(baselineTotal)} a ${formatCurrency(currentTotal)} (-${formatCurrency(dropAmount)})`,
+            eventAt: currentStart.toISOString(),
+            payload: {
+              amount: dropAmount,
+            },
+            priority: 75,
+            impact: dropAmount,
+          });
+        }
+      }
+    }
+
+    const categoryRule = getRuleConfig('category_spike');
+    if (categoryRule.isActive && expenses.length > 0) {
+      const windowDays = categoryRule.config.window_days ?? 30;
+      const baselineDays = categoryRule.config.baseline_days ?? windowDays;
+      const minPct = categoryRule.config.min_pct ?? 0.5;
+      const minAmount = categoryRule.config.min_amount ?? 200;
+      const minTotal = categoryRule.config.min_total ?? 300;
+      const currentStart = windowStart(windowDays);
+      const baselineStart = windowStart(windowDays + baselineDays);
+
+      const currentExpenses = expenses.filter((t) => t.dateObj >= currentStart);
+      const baselineExpenses = expenses.filter((t) => t.dateObj >= baselineStart && t.dateObj < currentStart);
+
+      if (currentExpenses.length > 0 && baselineExpenses.length > 0) {
+        const categoryTotals = new Map<string, { current: number; baseline: number }>();
+
+        for (const t of currentExpenses) {
+          const key = t.category || 'Sin Categoria';
+          const total = categoryTotals.get(key) || { current: 0, baseline: 0 };
+          total.current += Math.abs(Number(t.amount) || 0);
+          categoryTotals.set(key, total);
+        }
+
+        for (const t of baselineExpenses) {
+          const key = t.category || 'Sin Categoria';
+          const total = categoryTotals.get(key) || { current: 0, baseline: 0 };
+          total.baseline += Math.abs(Number(t.amount) || 0);
+          categoryTotals.set(key, total);
+        }
+
+        const spikes = Array.from(categoryTotals.entries())
+          .filter(([category]) => normalizeText(category) !== 'sin categoria')
+          .map(([category, totals]) => {
+            const delta = totals.current - totals.baseline;
+            const pct = totals.baseline > 0 ? delta / totals.baseline : 0;
+            return { category, totals, delta, pct };
+          })
+          .filter((entry) => entry.totals.baseline > 0 && entry.delta >= minAmount && entry.pct >= minPct && entry.totals.current >= minTotal)
+          .sort((a, b) => b.delta - a.delta)
+          .slice(0, 2);
+
+        spikes.forEach((entry) => {
+          const payload = {
+            category: entry.category,
+            amount: entry.delta,
+            filterValue: entry.category,
+          };
+
+          if (shouldExcludeAlert('category_spike', payload)) return;
+
+          alerts.push({
+            ruleKey: 'category_spike',
+            dedupeKey: `category-spike-${normalizeText(entry.category)}-${currentStart.toISOString().slice(0, 10)}`,
+            type: entry.pct >= 1 ? 'danger' : 'warning',
+            title: `Gasto en ${entry.category} sube`,
+            message: `+${(entry.pct * 100).toFixed(0)}% vs periodo anterior`,
+            detail: `De ${formatCurrency(entry.totals.baseline)} a ${formatCurrency(entry.totals.current)} (+${formatCurrency(entry.delta)})`,
+            eventAt: currentStart.toISOString(),
+            payload,
+            priority: 70,
+            impact: entry.delta,
+          });
+        });
+      }
+    }
+
+    const merchantRule = getRuleConfig('merchant_concentration');
+    if (merchantRule.isActive && expenses.length > 0) {
+      const windowDays = merchantRule.config.window_days ?? 30;
+      const minShare = merchantRule.config.min_share ?? 0.4;
+      const minTotal = merchantRule.config.min_total ?? 500;
+      const minAmount = merchantRule.config.min_amount ?? 300;
+      const currentStart = windowStart(windowDays);
+      const currentExpenses = expenses.filter((t) => t.dateObj >= currentStart);
+      const currentTotal = sumAbs(currentExpenses);
+
+      if (currentTotal >= minTotal && currentExpenses.length > 0) {
+        const merchantTotals = new Map<string, { display: string; total: number }>();
+
+        for (const t of currentExpenses) {
+          const display =
+            t.merchant_normalized || t.description || t.description_clean || t.description_raw || 'Movimiento';
+          const key = normalizeText(display);
+          if (!key) continue;
+          const total = merchantTotals.get(key) || { display, total: 0 };
+          total.total += Math.abs(Number(t.amount) || 0);
+          merchantTotals.set(key, total);
+        }
+
+        const topMerchant = Array.from(merchantTotals.values()).sort((a, b) => b.total - a.total)[0];
+        if (topMerchant && topMerchant.total >= minAmount) {
+          const share = topMerchant.total / currentTotal;
+          if (share >= minShare) {
+            const payload = {
+              merchant: topMerchant.display,
+              amount: topMerchant.total,
+              filterValue: topMerchant.display,
+            };
+
+            if (!shouldExcludeAlert('merchant_concentration', payload)) {
+              alerts.push({
+                ruleKey: 'merchant_concentration',
+                dedupeKey: `merchant-concentration-${normalizeText(topMerchant.display)}-${currentStart.toISOString().slice(0, 10)}`,
+                type: share >= 0.6 ? 'danger' : 'warning',
+                title: 'Alta concentracion de gasto',
+                message: `${topMerchant.display} concentra ${(share * 100).toFixed(0)}% del gasto reciente`,
+                detail: `Total: ${formatCurrency(topMerchant.total)} de ${formatCurrency(currentTotal)}`,
+                eventAt: currentStart.toISOString(),
+                payload,
+                priority: 65,
+                impact: topMerchant.total,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const duplicateRule = getRuleConfig('duplicate_charge');
+    if (duplicateRule.isActive && expenses.length > 0) {
+      const windowDays = duplicateRule.config.window_days ?? 14;
+      const minCount = duplicateRule.config.min_count ?? 2;
+      const minTotal = duplicateRule.config.min_total ?? 200;
+      const currentStart = windowStart(windowDays);
+
+      const duplicateBuckets = new Map<
+        string,
+        { desc: string; amount: number; count: number; total: number; lastDate: Date }
+      >();
+
+      expenses
+        .filter((t) => t.dateObj >= currentStart)
+        .forEach((t) => {
+          const desc =
+            t.description || t.merchant_normalized || t.description_clean || t.description_raw || 'Movimiento';
+          const absAmount = Math.abs(Number(t.amount) || 0);
+          if (!desc || absAmount <= 0) return;
+          const key = `${normalizeText(desc)}|${Math.round(absAmount * 100)}`;
+          const existing = duplicateBuckets.get(key);
+          if (existing) {
+            existing.count += 1;
+            existing.total += absAmount;
+            if (t.dateObj > existing.lastDate) existing.lastDate = t.dateObj;
+          } else {
+            duplicateBuckets.set(key, {
+              desc,
+              amount: absAmount,
+              count: 1,
+              total: absAmount,
+              lastDate: t.dateObj,
+            });
+          }
+        });
+
+      Array.from(duplicateBuckets.values())
+        .filter((entry) => entry.count >= minCount && entry.total >= minTotal)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 2)
+        .forEach((entry, idx) => {
+          const severity = entry.total > minTotal * 2 || entry.count >= minCount + 1 ? 'warning' : 'info';
+          const payload = {
+            description: entry.desc,
+            amount: entry.total,
+            filterValue: entry.desc,
+          };
+
+          if (shouldExcludeAlert('duplicate_charge', payload)) return;
+
+          alerts.push({
+            ruleKey: 'duplicate_charge',
+            dedupeKey: `dup-${idx}-${normalizeText(entry.desc)}-${currentStart.toISOString().slice(0, 10)}`,
+            type: severity,
+            title: 'Posible duplicado',
+            message: `${entry.count} cargos similares de ${formatCurrency(entry.amount)} en ${windowDays} dias`,
+            detail: `Total afectado: ${formatCurrency(entry.total)}`,
+            eventAt: entry.lastDate.toISOString(),
+            payload,
+            priority: 60,
+            impact: entry.total,
+          });
+        });
+    }
+
+    const uncategorizedRule = getRuleConfig('uncategorized');
+    if (uncategorizedRule.isActive && dated.length > 0) {
+      const windowDays = uncategorizedRule.config.window_days ?? 60;
+      const minCount = uncategorizedRule.config.min_count ?? 5;
+      const minTotal = uncategorizedRule.config.min_total ?? 200;
+      const currentStart = windowStart(windowDays);
+      const uncategorized = dated.filter(
+        (t) => t.dateObj >= currentStart && normalizeText(t.category || '') === 'sin categoria'
+      );
+
+      if (uncategorized.length >= minCount) {
+        const uncategorizedTotal = sumAbs(uncategorized);
+        if (uncategorizedTotal >= minTotal) {
+          const payload = {
+            category: 'Sin Categoria',
+            amount: uncategorizedTotal,
+            filterValue: 'Sin Categoria',
+          };
+
+          if (!shouldExcludeAlert('uncategorized', payload)) {
+            alerts.push({
+              ruleKey: 'uncategorized',
+              dedupeKey: `uncategorized-${currentStart.toISOString().slice(0, 10)}`,
+              type: uncategorizedTotal >= minTotal * 2 ? 'warning' : 'info',
+              title: 'Movimientos sin categoria',
+              message: `${uncategorized.length} movimientos sin categoria`,
+              detail: `Total: ${formatCurrency(uncategorizedTotal)}`,
+              eventAt: currentStart.toISOString(),
+              payload,
+              priority: 45,
+              impact: uncategorizedTotal,
+            });
+          }
+        }
+      }
+    }
+
+    const runwayRule = getRuleConfig('runway_low');
+    if (runwayRule.isActive && averageMonthlyNet < 0 && transactions.length > 0) {
+      const warningMonths = runwayRule.config.warning_months ?? 6;
+      const dangerMonths = runwayRule.config.danger_months ?? 3;
+      const burnRate = Math.abs(averageMonthlyNet);
+      const monthsLeft = burnRate > 0 ? Math.max(0, currentBalance / burnRate) : 0;
+      if (monthsLeft < warningMonths) {
+        alerts.push({
+          ruleKey: 'runway_low',
+          dedupeKey: `runway-${now.toISOString().slice(0, 7)}`,
+          type: monthsLeft <= dangerMonths ? 'danger' : 'warning',
+          title: 'Runway bajo',
+          message: `Caja para ${monthsLeft.toFixed(1)} meses al ritmo actual`,
+          detail: `Burn rate: ${formatCurrency(burnRate)}/mes | Saldo: ${formatCurrency(currentBalance)}`,
+          eventAt: now.toISOString(),
+          payload: {
+            amount: burnRate,
+          },
+          priority: 85,
+          impact: burnRate,
+        });
+      }
+    }
+
     return alerts;
-  }, [transactions, createFilterAction]);
+  }, [transactions, getRuleConfig, shouldExcludeAlert, averageMonthlyNet, currentBalance]);
+
+  const alertEventInputs = React.useMemo<AlertEventInput[]>(
+    () =>
+      alertCandidates.map((alert) => ({
+        rule_key: alert.ruleKey,
+        dedupe_key: alert.dedupeKey,
+        severity: alert.type,
+        title: alert.title,
+        message: alert.message,
+        detail: alert.detail ?? null,
+        event_at: alert.eventAt,
+        payload: alert.payload ?? {},
+      })),
+    [alertCandidates]
+  );
+
+  React.useEffect(() => {
+    if (!accessToken || alertSettingsLoading) return;
+    if (alertEventInputs.length === 0) {
+      setAlertEvents([]);
+      return;
+    }
+
+    syncAlertEvents(accessToken, alertEventInputs).catch((error) => {
+      console.error('Error syncing alerts:', error);
+    });
+  }, [accessToken, alertEventInputs, alertSettingsLoading, syncAlertEvents]);
 
   const handleGenerateInsight = async () => {
     if (!transactions.length) return;
@@ -376,7 +1073,7 @@ export default function DashboardPage() {
       monthlyAgg,
       topIncomeCategories: incomeDistribution.slice(0, 5),
       topExpenseCategories: expenseDistribution.slice(0, 5),
-      warnings: anomalies.filter((a) => a.type === 'warning').map((a) => a.message),
+      warnings: alertCandidates.filter((a) => a.type !== 'info').map((a) => a.message),
     };
 
     try {
@@ -403,238 +1100,9 @@ export default function DashboardPage() {
     }
   };
 
-  // Generate Notifications (Anomalies + System Alerts)
+  // Generate Notifications (Persisted Events)
   const notifications = React.useMemo<Notification[]>(() => {
-    const now = new Date();
-    const list: AlertSignal[] = [...anomalies];
-    const severityRank = { danger: 3, warning: 2, info: 1 };
-
-    const dated = transactions
-      .map((t) => {
-        const dateObj = safeParseDate(t.date);
-        return dateObj ? { ...t, dateObj } : null;
-      })
-      .filter(Boolean) as Array<TransactionRow & { dateObj: Date }>;
-
-    const isExpense = (t: TransactionRow) => t.type === 'expense' || Number(t.amount) < 0;
-    const isIncome = (t: TransactionRow) => t.type === 'income' || Number(t.amount) > 0;
-    const sumAbs = (items: Array<TransactionRow>) =>
-      items.reduce((acc, t) => acc + Math.abs(Number(t.amount) || 0), 0);
-
-    const last30Start = new Date(now);
-    last30Start.setDate(now.getDate() - 30);
-    const prev30Start = new Date(now);
-    prev30Start.setDate(now.getDate() - 60);
-    const last14Start = new Date(now);
-    last14Start.setDate(now.getDate() - 14);
-    const last60Start = new Date(now);
-    last60Start.setDate(now.getDate() - 60);
-
-    const expenses = dated.filter(isExpense);
-    const incomes = dated.filter(isIncome);
-
-    const last30Expenses = expenses.filter((t) => t.dateObj >= last30Start);
-    const prev30Expenses = expenses.filter((t) => t.dateObj >= prev30Start && t.dateObj < last30Start);
-    const last30Income = incomes.filter((t) => t.dateObj >= last30Start);
-    const prev30Income = incomes.filter((t) => t.dateObj >= prev30Start && t.dateObj < last30Start);
-
-    const lastExpenseTotal = sumAbs(last30Expenses);
-    const prevExpenseTotal = sumAbs(prev30Expenses);
-    const lastIncomeTotal = sumAbs(last30Income);
-    const prevIncomeTotal = sumAbs(prev30Income);
-
-    if (prevIncomeTotal > 0) {
-      const dropAmount = prevIncomeTotal - lastIncomeTotal;
-      const dropPct = dropAmount / prevIncomeTotal;
-      if (dropAmount > 500 && dropPct >= 0.2) {
-        list.push({
-          id: 'income-drop',
-          type: dropPct >= 0.4 ? 'danger' : 'warning',
-          title: 'Ingresos a la baja',
-          message: `-${(dropPct * 100).toFixed(0)}% vs periodo anterior`,
-          detail: `De ${formatCurrency(prevIncomeTotal)} a ${formatCurrency(lastIncomeTotal)} (-${formatCurrency(dropAmount)})`,
-          timestamp: 'ultimos 30 dias',
-          priority: 75,
-          impact: dropAmount,
-        });
-      }
-    }
-
-    if (prevExpenseTotal > 0 && lastExpenseTotal > 0) {
-      const categoryTotals = new Map<string, { last: number; prev: number }>();
-
-      for (const t of last30Expenses) {
-        const key = t.category || 'Sin Categoria';
-        const total = categoryTotals.get(key) || { last: 0, prev: 0 };
-        total.last += Math.abs(Number(t.amount) || 0);
-        categoryTotals.set(key, total);
-      }
-
-      for (const t of prev30Expenses) {
-        const key = t.category || 'Sin Categoria';
-        const total = categoryTotals.get(key) || { last: 0, prev: 0 };
-        total.prev += Math.abs(Number(t.amount) || 0);
-        categoryTotals.set(key, total);
-      }
-
-      const spikes = Array.from(categoryTotals.entries())
-        .filter(([category]) => normalizeText(category) !== 'sin categoria')
-        .map(([category, totals]) => {
-          const delta = totals.last - totals.prev;
-          const pct = totals.prev > 0 ? delta / totals.prev : 0;
-          return { category, totals, delta, pct };
-        })
-        .filter((entry) => entry.totals.prev > 0 && entry.delta > 200 && entry.pct >= 0.5 && entry.totals.last > 300)
-        .sort((a, b) => b.delta - a.delta)
-        .slice(0, 2);
-
-      spikes.forEach((entry, idx) => {
-        list.push({
-          id: `cat-spike-${idx}-${normalizeText(entry.category)}`,
-          type: entry.pct >= 1 ? 'danger' : 'warning',
-          title: `Gasto en ${entry.category} sube`,
-          message: `+${(entry.pct * 100).toFixed(0)}% vs periodo anterior`,
-          detail: `De ${formatCurrency(entry.totals.prev)} a ${formatCurrency(entry.totals.last)} (+${formatCurrency(entry.delta)})`,
-          timestamp: 'ultimos 30 dias',
-          priority: 70,
-          impact: entry.delta,
-          action: createFilterAction('Ver categoria', entry.category),
-        });
-      });
-    }
-
-    if (last30Expenses.length > 0) {
-      const merchantTotals = new Map<string, { display: string; total: number }>();
-
-      for (const t of last30Expenses) {
-        const display =
-          t.merchant_normalized || t.description || t.description_clean || t.description_raw || 'Movimiento';
-        const key = normalizeText(display);
-        if (!key) continue;
-        const total = merchantTotals.get(key) || { display, total: 0 };
-        total.total += Math.abs(Number(t.amount) || 0);
-        merchantTotals.set(key, total);
-      }
-
-      const topMerchant = Array.from(merchantTotals.values()).sort((a, b) => b.total - a.total)[0];
-      if (topMerchant && lastExpenseTotal > 500) {
-        const share = topMerchant.total / lastExpenseTotal;
-        if (share >= 0.4 && topMerchant.total > 300) {
-          list.push({
-            id: `merchant-concentration-${normalizeText(topMerchant.display)}`,
-            type: share >= 0.6 ? 'danger' : 'warning',
-            title: 'Alta concentracion de gasto',
-            message: `${topMerchant.display} concentra ${(share * 100).toFixed(0)}% del gasto reciente`,
-            detail: `Total: ${formatCurrency(topMerchant.total)} de ${formatCurrency(lastExpenseTotal)}`,
-            timestamp: 'ultimos 30 dias',
-            priority: 65,
-            impact: topMerchant.total,
-            action: createFilterAction('Ver movimientos', topMerchant.display),
-          });
-        }
-      }
-    }
-
-    if (expenses.length > 0) {
-      const duplicateBuckets = new Map<
-        string,
-        { desc: string; amount: number; count: number; total: number; lastDate: Date }
-      >();
-
-      expenses
-        .filter((t) => t.dateObj >= last14Start)
-        .forEach((t) => {
-          const desc =
-            t.description || t.merchant_normalized || t.description_clean || t.description_raw || 'Movimiento';
-          const absAmount = Math.abs(Number(t.amount) || 0);
-          if (!desc || absAmount <= 0) return;
-          const key = `${normalizeText(desc)}|${Math.round(absAmount * 100)}`;
-          const existing = duplicateBuckets.get(key);
-          if (existing) {
-            existing.count += 1;
-            existing.total += absAmount;
-            if (t.dateObj > existing.lastDate) existing.lastDate = t.dateObj;
-          } else {
-            duplicateBuckets.set(key, {
-              desc,
-              amount: absAmount,
-              count: 1,
-              total: absAmount,
-              lastDate: t.dateObj,
-            });
-          }
-        });
-
-      Array.from(duplicateBuckets.values())
-        .filter((entry) => entry.count >= 2)
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 2)
-        .forEach((entry, idx) => {
-          const severity = entry.total > 500 || entry.count >= 3 ? 'warning' : 'info';
-          list.push({
-            id: `dup-${idx}-${normalizeText(entry.desc)}`,
-            type: severity,
-            title: 'Posible duplicado',
-            message: `${entry.count} cargos similares de ${formatCurrency(entry.amount)} en 14 dias`,
-            detail: `Total afectado: ${formatCurrency(entry.total)}`,
-            timestamp: formatRelativeDays(entry.lastDate),
-            priority: 60,
-            impact: entry.total,
-            action: createFilterAction('Revisar cargos', entry.desc),
-          });
-        });
-    }
-
-    const uncategorized = dated.filter(
-      (t) => t.dateObj >= last60Start && normalizeText(t.category || '') === 'sin categoria'
-    );
-    if (uncategorized.length > 0) {
-      const uncategorizedTotal = sumAbs(uncategorized);
-      const severity = uncategorizedTotal > 500 || uncategorized.length >= 10 ? 'warning' : 'info';
-      if (uncategorizedTotal > 200 || uncategorized.length >= 5) {
-        list.push({
-          id: 'uncategorized',
-          type: severity,
-          title: 'Movimientos sin categoria',
-          message: `${uncategorized.length} movimientos sin categoria`,
-          detail: `Total: ${formatCurrency(uncategorizedTotal)}`,
-          timestamp: 'ultimos 60 dias',
-          priority: 45,
-          impact: uncategorizedTotal,
-          action: createFilterAction('Revisar sin categoria', 'Sin Categoria'),
-        });
-      }
-    }
-
-    if (averageMonthlyNet < 0 && transactions.length > 0) {
-      const burnRate = Math.abs(averageMonthlyNet);
-      const monthsLeft = burnRate > 0 ? Math.max(0, currentBalance / burnRate) : 0;
-      if (monthsLeft < 6) {
-        list.push({
-          id: 'runway-1',
-          type: monthsLeft <= 3 ? 'danger' : 'warning',
-          title: 'Runway bajo',
-          message: `Caja para ${monthsLeft.toFixed(1)} meses al ritmo actual`,
-          detail: `Burn rate: ${formatCurrency(burnRate)}/mes | Saldo: ${formatCurrency(currentBalance)}`,
-          timestamp: 'calculado ahora',
-          priority: 85,
-          impact: burnRate,
-        });
-      }
-    }
-
-    const sorted = list
-      .sort((a, b) => {
-        const severityDiff = (severityRank[b.type] || 0) - (severityRank[a.type] || 0);
-        if (severityDiff !== 0) return severityDiff;
-        const priorityDiff = (b.priority || 0) - (a.priority || 0);
-        if (priorityDiff !== 0) return priorityDiff;
-        return (b.impact || 0) - (a.impact || 0);
-      })
-      .slice(0, 6)
-      .map(({ priority, impact, ...notif }) => notif);
-
-    if (sorted.length === 0) {
+    if (alertEvents.length === 0) {
       return [
         {
           id: 'empty',
@@ -646,12 +1114,35 @@ export default function DashboardPage() {
       ];
     }
 
-    return sorted;
-  }, [anomalies, averageMonthlyNet, currentBalance, createFilterAction, transactions]);
+    const severityRank = { danger: 3, warning: 2, info: 1 };
+
+    return alertEvents
+      .slice()
+      .sort((a, b) => {
+        const severityDiff = (severityRank[b.severity] || 0) - (severityRank[a.severity] || 0);
+        if (severityDiff !== 0) return severityDiff;
+        const dateA = safeParseDate(a.event_at) ?? safeParseDate(a.created_at) ?? new Date(0);
+        const dateB = safeParseDate(b.event_at) ?? safeParseDate(b.created_at) ?? new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      })
+      .slice(0, 6)
+      .map((event) => {
+        const eventDate = safeParseDate(event.event_at) ?? safeParseDate(event.created_at) ?? new Date();
+        return {
+          id: event.id,
+          type: event.severity,
+          title: event.title,
+          message: event.message,
+          detail: event.detail ?? undefined,
+          timestamp: eventDate ? formatRelativeDays(eventDate) : 'reciente',
+          actions: buildNotificationActions(event),
+        };
+      });
+  }, [alertEvents, buildNotificationActions]);
 
   const alertCount = React.useMemo(
-    () => notifications.filter((n) => n.type === 'warning' || n.type === 'danger').length,
-    [notifications]
+    () => alertEvents.filter((event) => event.severity === 'warning' || event.severity === 'danger').length,
+    [alertEvents]
   );
 
   const handleFileIngest = async (file: File) => {
@@ -838,14 +1329,18 @@ export default function DashboardPage() {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setIsNotificationsOpen(true)}
-                className="text-slate-500 hover:text-blue-400 flex items-center gap-1 p-2 relative"
+                onClick={() => {
+                  setIsNotificationsOpen(true);
+                  setIsAlertSettingsOpen(false);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-200 hover:bg-blue-500/20 hover:border-blue-400/60 transition-colors relative"
               >
                 {alertCount > 0 && (
                   <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-[10px] leading-[18px] text-white text-center">
                     {alertCount}
                   </div>
                 )}
+                <Bell size={14} className="text-blue-200" />
                 <span className="text-xs hidden md:inline">Alertas</span>
               </button>
               <UserMenu />
@@ -985,7 +1480,24 @@ export default function DashboardPage() {
         </main>
       </div>
 
-      <NotificationPanel isOpen={isNotificationsOpen} onClose={() => setIsNotificationsOpen(false)} notifications={notifications} />
+      <NotificationPanel
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        notifications={notifications}
+        onOpenSettings={() => {
+          setIsNotificationsOpen(false);
+          setIsAlertSettingsOpen(true);
+        }}
+      />
+      <AlertSettingsPanel
+        isOpen={isAlertSettingsOpen}
+        onClose={() => setIsAlertSettingsOpen(false)}
+        rules={alertRules}
+        exclusions={alertExclusions}
+        onSaveRules={handleSaveAlertRules}
+        onAddExclusion={handleAddAlertExclusion}
+        onRemoveExclusion={handleRemoveAlertExclusion}
+      />
     </div>
   );
 }

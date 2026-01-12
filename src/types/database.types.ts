@@ -261,6 +261,129 @@ export interface Database {
                 }
                 Relationships: []
             }
+            alert_rules: {
+                Row: {
+                    id: string
+                    user_id: string
+                    rule_key: string
+                    is_active: boolean
+                    config: Json
+                    created_at: string
+                    updated_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    rule_key: string
+                    is_active?: boolean
+                    config?: Json
+                    created_at?: string
+                    updated_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    rule_key?: string
+                    is_active?: boolean
+                    config?: Json
+                    created_at?: string
+                    updated_at?: string
+                }
+                Relationships: []
+            }
+            alert_exclusions: {
+                Row: {
+                    id: string
+                    user_id: string
+                    rule_key: string | null
+                    match_type: string
+                    match_value: string
+                    match_value_normalized: string
+                    min_amount: number | null
+                    max_amount: number | null
+                    is_active: boolean
+                    created_at: string
+                    updated_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    rule_key?: string | null
+                    match_type: string
+                    match_value: string
+                    match_value_normalized: string
+                    min_amount?: number | null
+                    max_amount?: number | null
+                    is_active?: boolean
+                    created_at?: string
+                    updated_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    rule_key?: string | null
+                    match_type?: string
+                    match_value?: string
+                    match_value_normalized?: string
+                    min_amount?: number | null
+                    max_amount?: number | null
+                    is_active?: boolean
+                    created_at?: string
+                    updated_at?: string
+                }
+                Relationships: []
+            }
+            alert_events: {
+                Row: {
+                    id: string
+                    user_id: string
+                    rule_key: string
+                    dedupe_key: string
+                    severity: Database['public']['Enums']['alert_severity']
+                    title: string
+                    message: string
+                    detail: string | null
+                    status: Database['public']['Enums']['alert_status']
+                    event_at: string
+                    last_seen_at: string
+                    payload: Json
+                    created_at: string
+                    updated_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    rule_key: string
+                    dedupe_key: string
+                    severity?: Database['public']['Enums']['alert_severity']
+                    title: string
+                    message: string
+                    detail?: string | null
+                    status?: Database['public']['Enums']['alert_status']
+                    event_at?: string
+                    last_seen_at?: string
+                    payload?: Json
+                    created_at?: string
+                    updated_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    rule_key?: string
+                    dedupe_key?: string
+                    severity?: Database['public']['Enums']['alert_severity']
+                    title?: string
+                    message?: string
+                    detail?: string | null
+                    status?: Database['public']['Enums']['alert_status']
+                    event_at?: string
+                    last_seen_at?: string
+                    payload?: Json
+                    created_at?: string
+                    updated_at?: string
+                }
+                Relationships: []
+            }
             transactions: {
                 Row: {
                     id: string
@@ -392,6 +515,8 @@ export interface Database {
             }
         }
         Enums: {
+            alert_status: 'open' | 'ignored' | 'dismissed'
+            alert_severity: 'info' | 'warning' | 'danger'
             txn_type: 'income' | 'expense' | 'transfer' | 'fee' | 'tax' | 'interest' | 'unknown'
             category_source: 'rule' | 'ml' | 'user' | 'unknown'
             category_type: 'income' | 'expense' | 'transfer' | 'financial' | 'other'

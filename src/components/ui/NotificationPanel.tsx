@@ -1,12 +1,13 @@
 'use client';
 
 import { GlassCard } from "@/components/ui/GlassCard";
-import { X, AlertTriangle, TrendingDown, Info } from "lucide-react";
+import { X, AlertTriangle, TrendingDown, Info, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface NotificationAction {
     label: string;
     onClick: () => void;
+    tone?: 'primary' | 'secondary' | 'danger';
 }
 
 export interface Notification {
@@ -16,16 +17,17 @@ export interface Notification {
     message: string;
     timestamp: string;
     detail?: string;
-    action?: NotificationAction;
+    actions?: NotificationAction[];
 }
 
 interface NotificationPanelProps {
     isOpen: boolean;
     onClose: () => void;
     notifications: Notification[];
+    onOpenSettings?: () => void;
 }
 
-export function NotificationPanel({ isOpen, onClose, notifications }: NotificationPanelProps) {
+export function NotificationPanel({ isOpen, onClose, notifications, onOpenSettings }: NotificationPanelProps) {
 
     return (
         <div
@@ -36,9 +38,20 @@ export function NotificationPanel({ isOpen, onClose, notifications }: Notificati
         >
             <div className="p-4 border-b border-white/10 flex justify-between items-center">
                 <h3 className="font-semibold text-white">Alertas</h3>
-                <button onClick={onClose} className="text-zinc-400 hover:text-white transition-colors">
-                    <X size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                    {onOpenSettings && (
+                        <button
+                            onClick={onOpenSettings}
+                            className="text-zinc-400 hover:text-white transition-colors"
+                            title="Configurar alertas"
+                        >
+                            <Settings size={18} />
+                        </button>
+                    )}
+                    <button onClick={onClose} className="text-zinc-400 hover:text-white transition-colors">
+                        <X size={20} />
+                    </button>
+                </div>
             </div>
 
             <div className="p-4 space-y-3 overflow-y-auto h-[calc(100vh-64px)]">
@@ -65,14 +78,26 @@ export function NotificationPanel({ isOpen, onClose, notifications }: Notificati
                         {notif.detail && (
                             <p className="text-[11px] text-zinc-500 mt-2">{notif.detail}</p>
                         )}
-                        {notif.action && (
-                            <button
-                                type="button"
-                                onClick={notif.action.onClick}
-                                className="mt-3 text-[11px] px-2 py-1 rounded border border-white/10 text-zinc-300 hover:text-white hover:border-white/30 transition-colors"
-                            >
-                                {notif.action.label}
-                            </button>
+                        {notif.actions && notif.actions.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {notif.actions.map((action, idx) => (
+                                    <button
+                                        key={`${notif.id}-action-${idx}`}
+                                        type="button"
+                                        onClick={action.onClick}
+                                        className={cn(
+                                            "text-[11px] px-2 py-1 rounded border transition-colors",
+                                            action.tone === 'danger'
+                                                ? "border-red-500/40 text-red-200 hover:border-red-400 hover:text-red-100"
+                                                : action.tone === 'primary'
+                                                    ? "border-blue-400/40 text-blue-200 hover:border-blue-300 hover:text-blue-100"
+                                                    : "border-white/10 text-zinc-300 hover:text-white hover:border-white/30"
+                                        )}
+                                    >
+                                        {action.label}
+                                    </button>
+                                ))}
+                            </div>
                         )}
                     </GlassCard>
                 ))}
