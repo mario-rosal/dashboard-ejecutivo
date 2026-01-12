@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import type { Database } from '@/types/database.types';
@@ -45,13 +45,16 @@ async function getUser(request: Request) {
   return user ?? null;
 }
 
-export async function PATCH(request: Request, context: { params: { id: string } }) {
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
   const user = await getUser(request);
   if (!user) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const eventId = context.params.id;
+  const { id: eventId } = await context.params;
   if (!eventId) {
     return NextResponse.json({ error: 'missing_id' }, { status: 400 });
   }
