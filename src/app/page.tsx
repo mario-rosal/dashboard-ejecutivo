@@ -113,33 +113,6 @@ export default function DashboardPage() {
   const [alertSettingsLoading, setAlertSettingsLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-      setAccessToken(session.access_token);
-
-      const [{ data, error }] = await Promise.all([
-        supabase
-          .from('transactions')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .order('date', { ascending: false }),
-        fetchAlertSettings(session.access_token),
-      ]);
-
-      if (error) console.error('Error fetching transactions:', error);
-      else setTransactions(data || []);
-
-      setLoading(false);
-    };
-
-    init();
-  }, [fetchAlertSettings, router]);
-
   const fetchTransactionsForUser = React.useCallback(async (uid: string) => {
     const { data, error } = await supabase
       .from('transactions')
@@ -191,6 +164,33 @@ export default function DashboardPage() {
       setAlertSettingsLoading(false);
     }
   }, []);
+
+  React.useEffect(() => {
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.push('/login');
+        return;
+      }
+      setAccessToken(session.access_token);
+
+      const [{ data, error }] = await Promise.all([
+        supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .order('date', { ascending: false }),
+        fetchAlertSettings(session.access_token),
+      ]);
+
+      if (error) console.error('Error fetching transactions:', error);
+      else setTransactions(data || []);
+
+      setLoading(false);
+    };
+
+    init();
+  }, [fetchAlertSettings, router]);
 
   const saveAlertRules = React.useCallback(
     async (token: string, rules: Array<{ rule_key: string; is_active: boolean; config: AlertRuleConfig }>) => {
