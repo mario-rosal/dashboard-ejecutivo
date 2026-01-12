@@ -4,12 +4,19 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { X, AlertTriangle, TrendingDown, Info } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export interface NotificationAction {
+    label: string;
+    onClick: () => void;
+}
+
 export interface Notification {
     id: string;
     type: "warning" | "danger" | "info";
     title: string;
     message: string;
     timestamp: string;
+    detail?: string;
+    action?: NotificationAction;
 }
 
 interface NotificationPanelProps {
@@ -28,7 +35,7 @@ export function NotificationPanel({ isOpen, onClose, notifications }: Notificati
             )}
         >
             <div className="p-4 border-b border-white/10 flex justify-between items-center">
-                <h3 className="font-semibold text-white">Notifications</h3>
+                <h3 className="font-semibold text-white">Alertas</h3>
                 <button onClick={onClose} className="text-zinc-400 hover:text-white transition-colors">
                     <X size={20} />
                 </button>
@@ -55,6 +62,18 @@ export function NotificationPanel({ isOpen, onClose, notifications }: Notificati
                         </div>
                         <h4 className="text-sm font-medium text-white mb-1">{notif.title}</h4>
                         <p className="text-xs text-zinc-400 leading-relaxed">{notif.message}</p>
+                        {notif.detail && (
+                            <p className="text-[11px] text-zinc-500 mt-2">{notif.detail}</p>
+                        )}
+                        {notif.action && (
+                            <button
+                                type="button"
+                                onClick={notif.action.onClick}
+                                className="mt-3 text-[11px] px-2 py-1 rounded border border-white/10 text-zinc-300 hover:text-white hover:border-white/30 transition-colors"
+                            >
+                                {notif.action.label}
+                            </button>
+                        )}
                     </GlassCard>
                 ))}
             </div>

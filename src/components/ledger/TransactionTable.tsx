@@ -58,18 +58,33 @@ type EditableField = keyof EditableFieldValueMap;
 interface TransactionTableProps {
     initialData?: TransactionRow[];
     onTransactionUpdate?: (transaction: TransactionRow) => void;
+    filterValue?: string;
+    onFilterChange?: (value: string) => void;
+    showToolbar?: boolean;
 }
 
-export function TransactionTable({ initialData = [], onTransactionUpdate }: TransactionTableProps) {
+export function TransactionTable({
+    initialData = [],
+    onTransactionUpdate,
+    filterValue,
+    onFilterChange,
+    showToolbar = true,
+}: TransactionTableProps) {
     const [data, setData] = useState<TransactionRow[]>(initialData);
     const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
     const [sorting, setSorting] = useState<SortingState>([]);
-    const [globalFilter, setGlobalFilter] = useState('');
+    const [globalFilter, setGlobalFilter] = useState(filterValue ?? '');
 
     // Sync local data when parent provides new transactions
     useEffect(() => {
         setData(initialData);
     }, [initialData]);
+
+    useEffect(() => {
+        if (filterValue !== undefined) {
+            setGlobalFilter(filterValue);
+        }
+    }, [filterValue]);
 
     useEffect(() => {
         let active = true;
@@ -337,17 +352,22 @@ export function TransactionTable({ initialData = [], onTransactionUpdate }: Tran
     return (
         <GlassCard className="p-6">
             {/* Table Toolbar */}
-            <div className="flex items-center justify-between py-4">
-                <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-500" />
-                    <input
-                        placeholder="Buscar movimiento..."
-                        value={globalFilter ?? ""}
-                        onChange={(event) => setGlobalFilter(event.target.value)}
-                        className="pl-8 pr-4 py-2 bg-zinc-900/50 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500 w-64 transition-colors"
-                    />
+            {showToolbar && (
+                <div className="flex items-center justify-between py-4">
+                    <div className="relative">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-500" />
+                        <input
+                            placeholder="Buscar movimiento..."
+                            value={globalFilter ?? ""}
+                            onChange={(event) => {
+                                setGlobalFilter(event.target.value);
+                                onFilterChange?.(event.target.value);
+                            }}
+                            className="pl-8 pr-4 py-2 bg-zinc-900/50 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500 w-64 transition-colors"
+                        />
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="rounded-lg border border-zinc-800 overflow-hidden">
                 <table className="w-full text-sm text-left table-fixed">

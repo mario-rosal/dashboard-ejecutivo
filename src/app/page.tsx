@@ -26,11 +26,43 @@ import { Database } from '@/types/database.types';
 type TransactionRow = Database['public']['Tables']['transactions']['Row'];
 type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
 
+const currencyFormatter = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+const formatCurrency = (value: number) => currencyFormatter.format(value);
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const formatRelativeDays = (date: Date) => {
+  const diffDays = Math.round((Date.now() - date.getTime()) / MS_PER_DAY);
+  if (diffDays <= 0) return 'hoy';
+  if (diffDays === 1) return 'hace 1 dia';
+  if (diffDays < 7) return `hace ${diffDays} dias`;
+  const weeks = Math.floor(diffDays / 7);
+  if (weeks < 5) return `hace ${weeks} semanas`;
+  const months = Math.floor(diffDays / 30);
+  return `hace ${months} meses`;
+};
+
+const safeParseDate = (value: string | null | undefined) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const normalizeText = (value: string | null | undefined) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+type AlertSignal = Notification & { priority: number; impact?: number };
+
 export default function DashboardPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'transactions'>('dashboard');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+  const [transactionFilter, setTransactionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [aiInsight, setAiInsight] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -78,6 +110,23 @@ export default function DashboardPage() {
       prev.map((tx) => (tx.id === updated.id ? { ...tx, ...updated } : tx))
     );
   }, []);
+
+  const openTransactionsWithFilter = React.useCallback(
+    (filterValue: string) => {
+      setActiveTab('transactions');
+      setTransactionFilter(filterValue);
+      setIsNotificationsOpen(false);
+    },
+    [setActiveTab, setTransactionFilter, setIsNotificationsOpen]
+  );
+
+  const createFilterAction = React.useCallback(
+    (label: string, filterValue: string) => ({
+      label,
+      onClick: () => openTransactionsWithFilter(filterValue),
+    }),
+    [openTransactionsWithFilter]
+  );
 
   const hashFile = React.useCallback(async (file: File) => {
     const buffer = await file.arrayBuffer();
@@ -253,45 +302,54 @@ export default function DashboardPage() {
   }, [monthlyAgg]);
 
   // Detect Anomalies (Simple: Outliers > 3x Avg Expense)
-  const anomalies = React.useMemo(() => {
-    const alerts: { title: string; message: string; type: 'warning' | 'info' }[] = [];
-
-    // Filter expenses
-    const expenses = transactions.filter(t => t.type === 'expense' || (t.amount < 0 && t.type !== 'income'));
+  const anomalies = React.useMemo<AlertSignal[]>(() => {
+    const alerts: AlertSignal[] = [];
+    const expenses = transactions.filter(
+      (t) => t.type === 'expense' || (t.amount < 0 && t.type !== 'income')
+    );
 
     if (expenses.length > 5) {
-      const avgExpense = Math.abs(expenses.reduce((acc, t) => acc + Number(t.amount), 0) / expenses.length);
+      const avgExpense = Math.abs(
+        expenses.reduce((acc, t) => acc + Number(t.amount || 0), 0) / expenses.length
+      );
 
-      // Find outliers, largest first, and dedupe by description+amount+date to avoid duplicates
-      const outliers = expenses
-        .filter(t => Math.abs(Number(t.amount)) > avgExpense * 3)
-        .sort((a, b) => Math.abs(Number(b.amount)) - Math.abs(Number(a.amount)));
+      if (avgExpense > 0) {
+        const outliers = expenses
+          .filter((t) => Math.abs(Number(t.amount)) > avgExpense * 3)
+          .sort((a, b) => Math.abs(Number(b.amount)) - Math.abs(Number(a.amount)));
 
-      const seen = new Set<string>();
-      for (const t of outliers) {
-        const normalizedDesc = (t.description || '').trim().toLowerCase();
-        const amountCents = Math.round(Math.abs(Number(t.amount)) * 100);
-        const key = `${normalizedDesc}|${amountCents}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
+        const seen = new Set<string>();
+        for (const t of outliers) {
+          const desc =
+            t.description || t.merchant_normalized || t.description_clean || t.description_raw || 'Movimiento';
+          const normalizedDesc = normalizeText(desc);
+          const amountCents = Math.round(Math.abs(Number(t.amount)) * 100);
+          const key = `${normalizedDesc}|${amountCents}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
 
-        alerts.push({
-          title: "Gasto Inusual",
-          message: `${t.description || 'Gasto'} (${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(Math.abs(t.amount))}) supera 3x el promedio.`,
-          type: 'warning'
-        });
+          const absAmount = Math.abs(Number(t.amount) || 0);
+          const txnDate = safeParseDate(t.date);
 
-        if (alerts.length >= 3) break;
+          alerts.push({
+            id: `anom-${t.id ?? key}`,
+            type: 'warning',
+            title: 'Gasto inusual',
+            message: `${desc} (${formatCurrency(absAmount)}) supera 3x el promedio.`,
+            detail: `Promedio: ${formatCurrency(avgExpense)} | Umbral: ${formatCurrency(avgExpense * 3)}`,
+            timestamp: txnDate ? formatRelativeDays(txnDate) : 'reciente',
+            priority: 90,
+            impact: absAmount,
+            action: desc ? createFilterAction('Revisar movimiento', desc) : undefined,
+          });
+
+          if (alerts.length >= 3) break;
+        }
       }
     }
 
-    if (alerts.length === 0 && transactions.length > 0) {
-      alerts.push({ title: "Todo en orden", message: "No se han detectado anomalías recientes.", type: 'info' });
-    }
-
     return alerts;
-    return alerts;
-  }, [transactions]);
+  }, [transactions, createFilterAction]);
 
   const handleGenerateInsight = async () => {
     if (!transactions.length) return;
@@ -347,47 +405,254 @@ export default function DashboardPage() {
 
   // Generate Notifications (Anomalies + System Alerts)
   const notifications = React.useMemo<Notification[]>(() => {
-    const list: Notification[] = [];
+    const now = new Date();
+    const list: AlertSignal[] = [...anomalies];
+    const severityRank = { danger: 3, warning: 2, info: 1 };
 
-    // 1. Add Anomalies
-    anomalies.filter(a => a.type === 'warning').forEach((a, i) => {
-      list.push({
-        id: `anom-${i}`,
-        type: 'danger',
-        title: a.title,
-        message: a.message,
-        timestamp: 'Hace un momento'
-      });
-    });
+    const dated = transactions
+      .map((t) => {
+        const dateObj = safeParseDate(t.date);
+        return dateObj ? { ...t, dateObj } : null;
+      })
+      .filter(Boolean) as Array<TransactionRow & { dateObj: Date }>;
 
-    // 2. Runway Alert
-    if (averageMonthlyNet < 0 && transactions.length > 0) {
-      const burnRate = Math.abs(averageMonthlyNet);
-      const monthsLeft = currentBalance / burnRate;
+    const isExpense = (t: TransactionRow) => t.type === 'expense' || Number(t.amount) < 0;
+    const isIncome = (t: TransactionRow) => t.type === 'income' || Number(t.amount) > 0;
+    const sumAbs = (items: Array<TransactionRow>) =>
+      items.reduce((acc, t) => acc + Math.abs(Number(t.amount) || 0), 0);
 
-      if (monthsLeft < 6) {
+    const last30Start = new Date(now);
+    last30Start.setDate(now.getDate() - 30);
+    const prev30Start = new Date(now);
+    prev30Start.setDate(now.getDate() - 60);
+    const last14Start = new Date(now);
+    last14Start.setDate(now.getDate() - 14);
+    const last60Start = new Date(now);
+    last60Start.setDate(now.getDate() - 60);
+
+    const expenses = dated.filter(isExpense);
+    const incomes = dated.filter(isIncome);
+
+    const last30Expenses = expenses.filter((t) => t.dateObj >= last30Start);
+    const prev30Expenses = expenses.filter((t) => t.dateObj >= prev30Start && t.dateObj < last30Start);
+    const last30Income = incomes.filter((t) => t.dateObj >= last30Start);
+    const prev30Income = incomes.filter((t) => t.dateObj >= prev30Start && t.dateObj < last30Start);
+
+    const lastExpenseTotal = sumAbs(last30Expenses);
+    const prevExpenseTotal = sumAbs(prev30Expenses);
+    const lastIncomeTotal = sumAbs(last30Income);
+    const prevIncomeTotal = sumAbs(prev30Income);
+
+    if (prevIncomeTotal > 0) {
+      const dropAmount = prevIncomeTotal - lastIncomeTotal;
+      const dropPct = dropAmount / prevIncomeTotal;
+      if (dropAmount > 500 && dropPct >= 0.2) {
         list.push({
-          id: 'runway-1',
-          type: 'warning',
-          title: 'Runway Crítico / Cash Flow Negativo',
-          message: `Al ritmo actual (${new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' }).format(burnRate)}/mes), tienes caja para ${monthsLeft.toFixed(1)} meses.`,
-          timestamp: 'Calculado ahora'
+          id: 'income-drop',
+          type: dropPct >= 0.4 ? 'danger' : 'warning',
+          title: 'Ingresos a la baja',
+          message: `-${(dropPct * 100).toFixed(0)}% vs periodo anterior`,
+          detail: `De ${formatCurrency(prevIncomeTotal)} a ${formatCurrency(lastIncomeTotal)} (-${formatCurrency(dropAmount)})`,
+          timestamp: 'ultimos 30 dias',
+          priority: 75,
+          impact: dropAmount,
         });
       }
     }
 
-    if (list.length === 0) {
-      list.push({
-        id: 'empty',
-        type: 'info',
-        title: 'Sistema Actualizado',
-        message: 'Todo parece estar en orden. No hay alertas críticas.',
-        timestamp: 'Ahora mismo'
+    if (prevExpenseTotal > 0 && lastExpenseTotal > 0) {
+      const categoryTotals = new Map<string, { last: number; prev: number }>();
+
+      for (const t of last30Expenses) {
+        const key = t.category || 'Sin Categoria';
+        const total = categoryTotals.get(key) || { last: 0, prev: 0 };
+        total.last += Math.abs(Number(t.amount) || 0);
+        categoryTotals.set(key, total);
+      }
+
+      for (const t of prev30Expenses) {
+        const key = t.category || 'Sin Categoria';
+        const total = categoryTotals.get(key) || { last: 0, prev: 0 };
+        total.prev += Math.abs(Number(t.amount) || 0);
+        categoryTotals.set(key, total);
+      }
+
+      const spikes = Array.from(categoryTotals.entries())
+        .filter(([category]) => normalizeText(category) !== 'sin categoria')
+        .map(([category, totals]) => {
+          const delta = totals.last - totals.prev;
+          const pct = totals.prev > 0 ? delta / totals.prev : 0;
+          return { category, totals, delta, pct };
+        })
+        .filter((entry) => entry.totals.prev > 0 && entry.delta > 200 && entry.pct >= 0.5 && entry.totals.last > 300)
+        .sort((a, b) => b.delta - a.delta)
+        .slice(0, 2);
+
+      spikes.forEach((entry, idx) => {
+        list.push({
+          id: `cat-spike-${idx}-${normalizeText(entry.category)}`,
+          type: entry.pct >= 1 ? 'danger' : 'warning',
+          title: `Gasto en ${entry.category} sube`,
+          message: `+${(entry.pct * 100).toFixed(0)}% vs periodo anterior`,
+          detail: `De ${formatCurrency(entry.totals.prev)} a ${formatCurrency(entry.totals.last)} (+${formatCurrency(entry.delta)})`,
+          timestamp: 'ultimos 30 dias',
+          priority: 70,
+          impact: entry.delta,
+          action: createFilterAction('Ver categoria', entry.category),
+        });
       });
     }
 
-    return list;
-  }, [anomalies, averageMonthlyNet, currentBalance, transactions]);
+    if (last30Expenses.length > 0) {
+      const merchantTotals = new Map<string, { display: string; total: number }>();
+
+      for (const t of last30Expenses) {
+        const display =
+          t.merchant_normalized || t.description || t.description_clean || t.description_raw || 'Movimiento';
+        const key = normalizeText(display);
+        if (!key) continue;
+        const total = merchantTotals.get(key) || { display, total: 0 };
+        total.total += Math.abs(Number(t.amount) || 0);
+        merchantTotals.set(key, total);
+      }
+
+      const topMerchant = Array.from(merchantTotals.values()).sort((a, b) => b.total - a.total)[0];
+      if (topMerchant && lastExpenseTotal > 500) {
+        const share = topMerchant.total / lastExpenseTotal;
+        if (share >= 0.4 && topMerchant.total > 300) {
+          list.push({
+            id: `merchant-concentration-${normalizeText(topMerchant.display)}`,
+            type: share >= 0.6 ? 'danger' : 'warning',
+            title: 'Alta concentracion de gasto',
+            message: `${topMerchant.display} concentra ${(share * 100).toFixed(0)}% del gasto reciente`,
+            detail: `Total: ${formatCurrency(topMerchant.total)} de ${formatCurrency(lastExpenseTotal)}`,
+            timestamp: 'ultimos 30 dias',
+            priority: 65,
+            impact: topMerchant.total,
+            action: createFilterAction('Ver movimientos', topMerchant.display),
+          });
+        }
+      }
+    }
+
+    if (expenses.length > 0) {
+      const duplicateBuckets = new Map<
+        string,
+        { desc: string; amount: number; count: number; total: number; lastDate: Date }
+      >();
+
+      expenses
+        .filter((t) => t.dateObj >= last14Start)
+        .forEach((t) => {
+          const desc =
+            t.description || t.merchant_normalized || t.description_clean || t.description_raw || 'Movimiento';
+          const absAmount = Math.abs(Number(t.amount) || 0);
+          if (!desc || absAmount <= 0) return;
+          const key = `${normalizeText(desc)}|${Math.round(absAmount * 100)}`;
+          const existing = duplicateBuckets.get(key);
+          if (existing) {
+            existing.count += 1;
+            existing.total += absAmount;
+            if (t.dateObj > existing.lastDate) existing.lastDate = t.dateObj;
+          } else {
+            duplicateBuckets.set(key, {
+              desc,
+              amount: absAmount,
+              count: 1,
+              total: absAmount,
+              lastDate: t.dateObj,
+            });
+          }
+        });
+
+      Array.from(duplicateBuckets.values())
+        .filter((entry) => entry.count >= 2)
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 2)
+        .forEach((entry, idx) => {
+          const severity = entry.total > 500 || entry.count >= 3 ? 'warning' : 'info';
+          list.push({
+            id: `dup-${idx}-${normalizeText(entry.desc)}`,
+            type: severity,
+            title: 'Posible duplicado',
+            message: `${entry.count} cargos similares de ${formatCurrency(entry.amount)} en 14 dias`,
+            detail: `Total afectado: ${formatCurrency(entry.total)}`,
+            timestamp: formatRelativeDays(entry.lastDate),
+            priority: 60,
+            impact: entry.total,
+            action: createFilterAction('Revisar cargos', entry.desc),
+          });
+        });
+    }
+
+    const uncategorized = dated.filter(
+      (t) => t.dateObj >= last60Start && normalizeText(t.category || '') === 'sin categoria'
+    );
+    if (uncategorized.length > 0) {
+      const uncategorizedTotal = sumAbs(uncategorized);
+      const severity = uncategorizedTotal > 500 || uncategorized.length >= 10 ? 'warning' : 'info';
+      if (uncategorizedTotal > 200 || uncategorized.length >= 5) {
+        list.push({
+          id: 'uncategorized',
+          type: severity,
+          title: 'Movimientos sin categoria',
+          message: `${uncategorized.length} movimientos sin categoria`,
+          detail: `Total: ${formatCurrency(uncategorizedTotal)}`,
+          timestamp: 'ultimos 60 dias',
+          priority: 45,
+          impact: uncategorizedTotal,
+          action: createFilterAction('Revisar sin categoria', 'Sin Categoria'),
+        });
+      }
+    }
+
+    if (averageMonthlyNet < 0 && transactions.length > 0) {
+      const burnRate = Math.abs(averageMonthlyNet);
+      const monthsLeft = burnRate > 0 ? Math.max(0, currentBalance / burnRate) : 0;
+      if (monthsLeft < 6) {
+        list.push({
+          id: 'runway-1',
+          type: monthsLeft <= 3 ? 'danger' : 'warning',
+          title: 'Runway bajo',
+          message: `Caja para ${monthsLeft.toFixed(1)} meses al ritmo actual`,
+          detail: `Burn rate: ${formatCurrency(burnRate)}/mes | Saldo: ${formatCurrency(currentBalance)}`,
+          timestamp: 'calculado ahora',
+          priority: 85,
+          impact: burnRate,
+        });
+      }
+    }
+
+    const sorted = list
+      .sort((a, b) => {
+        const severityDiff = (severityRank[b.type] || 0) - (severityRank[a.type] || 0);
+        if (severityDiff !== 0) return severityDiff;
+        const priorityDiff = (b.priority || 0) - (a.priority || 0);
+        if (priorityDiff !== 0) return priorityDiff;
+        return (b.impact || 0) - (a.impact || 0);
+      })
+      .slice(0, 6)
+      .map(({ priority, impact, ...notif }) => notif);
+
+    if (sorted.length === 0) {
+      return [
+        {
+          id: 'empty',
+          type: 'info',
+          title: 'Sistema actualizado',
+          message: 'Todo parece estar en orden. No hay alertas activas.',
+          timestamp: 'ahora mismo',
+        },
+      ];
+    }
+
+    return sorted;
+  }, [anomalies, averageMonthlyNet, currentBalance, createFilterAction, transactions]);
+
+  const alertCount = React.useMemo(
+    () => notifications.filter((n) => n.type === 'warning' || n.type === 'danger').length,
+    [notifications]
+  );
 
   const handleFileIngest = async (file: File) => {
     try {
@@ -576,7 +841,11 @@ export default function DashboardPage() {
                 onClick={() => setIsNotificationsOpen(true)}
                 className="text-slate-500 hover:text-blue-400 flex items-center gap-1 p-2 relative"
               >
-                <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                {alertCount > 0 && (
+                  <div className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-[10px] leading-[18px] text-white text-center">
+                    {alertCount}
+                  </div>
+                )}
                 <span className="text-xs hidden md:inline">Alertas</span>
               </button>
               <UserMenu />
@@ -695,10 +964,22 @@ export default function DashboardPage() {
                 </h3>
                 <div className="relative w-full md:w-64">
                   <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
-                  <input type="text" placeholder="Buscar concepto..." className="w-full bg-slate-900/50 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" />
+                  <input
+                    type="text"
+                    placeholder="Buscar concepto..."
+                    value={transactionFilter}
+                    onChange={(event) => setTransactionFilter(event.target.value)}
+                    className="w-full bg-slate-900/50 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500"
+                  />
                 </div>
               </div>
-              <TransactionTable initialData={transactions} onTransactionUpdate={handleTransactionUpdate} />
+              <TransactionTable
+                initialData={transactions}
+                onTransactionUpdate={handleTransactionUpdate}
+                filterValue={transactionFilter}
+                onFilterChange={setTransactionFilter}
+                showToolbar={false}
+              />
             </div>
           )}
         </main>
