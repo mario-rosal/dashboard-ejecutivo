@@ -324,6 +324,24 @@ export default function DashboardPage() {
     [accessToken, addAlertExclusion, updateAlertEventStatus]
   );
 
+  const openTransactionsWithFilter = React.useCallback(
+    (filterValue: string) => {
+      setActiveTab('transactions');
+      setTransactionFilter(filterValue);
+      setIsNotificationsOpen(false);
+    },
+    [setActiveTab, setTransactionFilter, setIsNotificationsOpen]
+  );
+
+  const createFilterAction = React.useCallback(
+    (label: string, filterValue: string) => ({
+      label,
+      onClick: () => openTransactionsWithFilter(filterValue),
+      tone: 'primary' as const,
+    }),
+    [openTransactionsWithFilter]
+  );
+
   const buildNotificationActions = React.useCallback(
     (event: AlertEventRow) => {
       if (!accessToken) return [];
@@ -401,24 +419,6 @@ export default function DashboardPage() {
       await removeAlertExclusion(accessToken, exclusionId);
     },
     [accessToken, removeAlertExclusion]
-  );
-
-  const openTransactionsWithFilter = React.useCallback(
-    (filterValue: string) => {
-      setActiveTab('transactions');
-      setTransactionFilter(filterValue);
-      setIsNotificationsOpen(false);
-    },
-    [setActiveTab, setTransactionFilter, setIsNotificationsOpen]
-  );
-
-  const createFilterAction = React.useCallback(
-    (label: string, filterValue: string) => ({
-      label,
-      onClick: () => openTransactionsWithFilter(filterValue),
-      tone: 'primary' as const,
-    }),
-    [openTransactionsWithFilter]
   );
 
   const ruleMap = React.useMemo(() => {
