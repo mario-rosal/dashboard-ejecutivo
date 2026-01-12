@@ -7,7 +7,7 @@ import { ALERT_RULE_DEFINITIONS } from '@/lib/alerts/definitions';
 
 export const runtime = 'nodejs';
 
-const allowedRuleKeys = new Set(ALERT_RULE_DEFINITIONS.map((rule) => rule.key));
+const allowedRuleKeys = new Set<string>(ALERT_RULE_DEFINITIONS.map((rule) => rule.key));
 const allowedMatchTypes = new Set(['merchant', 'category', 'description']);
 
 const normalizeText = (value: string) =>

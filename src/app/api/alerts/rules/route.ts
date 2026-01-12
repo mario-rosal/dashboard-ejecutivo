@@ -7,7 +7,7 @@ import { ALERT_RULE_DEFINITIONS, ALERT_RULE_DEFAULTS } from '@/lib/alerts/defini
 
 export const runtime = 'nodejs';
 
-const allowedRuleKeys = new Set(ALERT_RULE_DEFINITIONS.map((rule) => rule.key));
+const allowedRuleKeys = new Set<string>(ALERT_RULE_DEFINITIONS.map((rule) => rule.key));
 
 async function getUser(request: Request) {
   const cookieStore = await cookies();
