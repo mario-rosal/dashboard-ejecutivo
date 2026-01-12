@@ -6,6 +6,9 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
+const ALERT_STATUSES = ['open', 'ignored', 'dismissed'] as const;
+type AlertStatus = (typeof ALERT_STATUSES)[number];
+
 async function getUser(request: Request) {
   const cookieStore = await cookies();
   const authHeader = request.headers.get('authorization');
@@ -53,8 +56,10 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const statusParam = url.searchParams.get('status');
-  const status =
-    statusParam && ['open', 'ignored', 'dismissed'].includes(statusParam) ? statusParam : 'open';
+  const status: AlertStatus =
+    statusParam && ALERT_STATUSES.includes(statusParam as AlertStatus)
+      ? (statusParam as AlertStatus)
+      : 'open';
   const limitParam = Number(url.searchParams.get('limit') ?? 50);
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 50;
 

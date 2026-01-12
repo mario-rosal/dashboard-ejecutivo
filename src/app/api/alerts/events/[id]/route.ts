@@ -6,6 +6,14 @@ import { getSupabaseAdmin } from '@/lib/supabaseAdmin';
 
 export const runtime = 'nodejs';
 
+const ALERT_STATUSES = ['open', 'ignored', 'dismissed'] as const;
+type AlertStatus = (typeof ALERT_STATUSES)[number];
+
+const parseAlertStatus = (value: unknown): AlertStatus | null => {
+  const normalized = String(value ?? '').trim();
+  return ALERT_STATUSES.includes(normalized as AlertStatus) ? (normalized as AlertStatus) : null;
+};
+
 async function getUser(request: Request) {
   const cookieStore = await cookies();
   const authHeader = request.headers.get('authorization');
@@ -60,8 +68,8 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => null);
-  const status = String(body?.status ?? '').trim();
-  if (!status || !['open', 'ignored', 'dismissed'].includes(status)) {
+  const status = parseAlertStatus(body?.status);
+  if (!status) {
     return NextResponse.json({ error: 'invalid_status' }, { status: 400 });
   }
 
