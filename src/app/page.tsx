@@ -17,7 +17,6 @@ import { NotificationPanel } from '@/components/ui/NotificationPanel';
 import type { Notification, NotificationAction } from '@/components/ui/NotificationPanel';
 import { AlertSettingsPanel } from '@/components/alerts/AlertSettingsPanel';
 import { parseFinancialFile } from '@/lib/ingest/excelProcessor';
-import { uploadPdfToWebhook } from '@/lib/ingest/pdfPipeline';
 import {
   ALERT_RULE_DEFINITIONS,
   type AlertRuleConfig,
@@ -95,6 +94,10 @@ type AlertEventInput = {
   event_at?: string;
   payload?: Database['public']['Tables']['alert_events']['Row']['payload'];
 };
+
+const acceptedFormatsLabel = '.csv, .xls, .xlsx';
+const isPdfFile = (file: File) =>
+  file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -1155,24 +1158,9 @@ export default function DashboardPage() {
         throw new Error("Debes iniciar sesi?n para importar datos.");
       }
 
-      if (file.type === 'application/pdf') {
-        const baselineCount = await countTransactionsForUser(uid);
-        await uploadPdfToWebhook(file);
-        await waitForPdfProcessing(uid, baselineCount);
-        if (accessToken) {
-          const res = await fetch('/api/transactions/categorize?force=false', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          });
-          if (!res.ok) {
-            const text = await res.text();
-            console.error('Categorization failed:', res.status, text);
-          } else {
-            await fetchTransactionsForUser(uid);
-          }
-        }
+      if (isPdfFile(file)) {
+        alert(`Formato no permitido. Formatos aceptados: ${acceptedFormatsLabel}`);
+        return;
       } else {
         const parsed = await parseFinancialFile(file);
 

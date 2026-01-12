@@ -10,7 +10,7 @@ interface DropZoneProps {
     accept?: string[]; // e.g. ['.csv', '.xls', '.xlsx']
 }
 
-export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx', '.pdf'] }: DropZoneProps) {
+export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx'] }: DropZoneProps) {
     const [isDragActive, setIsDragActive] = useState(false);
     const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
@@ -43,7 +43,7 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx', '.
         // Check extension
         if (!isAcceptedExtension(file)) {
             setStatus('error');
-            setErrorMessage(`Format invalid. Accept: ${accept.join(', ')}`);
+            setErrorMessage(`Formato invalido. Formatos aceptados: ${accept.join(', ')}`);
             setTimeout(() => setStatus('idle'), 3000);
             return;
         }
@@ -66,7 +66,7 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx', '.
             try {
                 if (!isAcceptedExtension(file)) {
                     setStatus('error');
-                    setErrorMessage(`Format invalid. Accept: ${accept.join(', ')}`);
+                    setErrorMessage(`Formato invalido. Formatos aceptados: ${accept.join(', ')}`);
                     setTimeout(() => setStatus('idle'), 3000);
                     return;
                 }
@@ -112,8 +112,8 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx', '.
                             <Upload size={24} />
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-slate-300">Excel (.xls/.xlsx), CSV or PDF</p>
-                            <p className="text-[10px] text-slate-500 mt-1">Drag file here</p>
+                        <p className="text-sm font-medium text-slate-300">Excel (.xls/.xlsx) o CSV</p>
+                        <p className="text-[10px] text-slate-500 mt-1">Arrastra el archivo aqui</p>
                         </div>
                     </>
                 )}
@@ -121,7 +121,7 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx', '.
                 {status === 'processing' && (
                     <div className="animate-in fade-in zoom-in duration-300">
                         <Loader2 size={48} className="animate-spin text-emerald-500 mx-auto" />
-                        <p className="mt-4 text-emerald-200">Processing financial data...</p>
+                        <p className="mt-4 text-emerald-200">Procesando datos financieros...</p>
                     </div>
                 )}
 
@@ -130,7 +130,7 @@ export function DropZone({ onFileAccepted, accept = ['.csv', '.xls', '.xlsx', '.
                         <div className="text-emerald-500 mx-auto mb-2">
                             <CheckCircle size={48} />
                         </div>
-                        <p className="text-lg text-emerald-400">Import Successful!</p>
+                        <p className="text-lg text-emerald-400">Importacion exitosa</p>
                     </div>
                 )}
 
