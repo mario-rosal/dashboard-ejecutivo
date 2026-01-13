@@ -294,6 +294,7 @@ export function TransactionTable({
                         value={getValue() as string}
                         type="select"
                         options={categoryOptions}
+                        placeholder="(seleccione una categoria)"
                         containerClassName="w-full"
                         displayClassName="max-w-[260px]"
                         inputClassName="w-full max-w-[240px]"

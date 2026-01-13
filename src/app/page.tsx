@@ -1155,7 +1155,7 @@ export default function DashboardPage() {
       const accessToken = session?.access_token;
 
       if (!uid) {
-        throw new Error("Debes iniciar sesi?n para importar datos.");
+        throw new Error("Debes iniciar sesion para importar datos.");
       }
 
       if (isPdfFile(file)) {
@@ -1227,7 +1227,7 @@ export default function DashboardPage() {
             }
           }
 
-          alert(`Importaci?n exitosa. Se a?adieron ${dataToInsert.length} movimientos.`);
+          alert(`Importacion exitosa. Se anadieron ${dataToInsert.length} movimientos.`);
           await fetchTransactionsForUser(uid);
         }
       }

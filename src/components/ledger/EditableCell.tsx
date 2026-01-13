@@ -9,6 +9,7 @@ interface EditableCellProps {
     onSave: (newValue: string | number) => void;
     type?: "text" | "number" | "currency" | "select";
     options?: string[]; // For select type
+    placeholder?: string;
     containerClassName?: string;
     displayClassName?: string;
     inputClassName?: string;
@@ -19,6 +20,7 @@ export function EditableCell({
     onSave,
     type = "text",
     options = [],
+    placeholder,
     containerClassName,
     displayClassName,
     inputClassName,
@@ -27,10 +29,21 @@ export function EditableCell({
     const [value, setValue] = useState(initialValue);
 
     useEffect(() => {
+        if (type === 'select') {
+            const stringValue = initialValue === null || initialValue === undefined ? '' : String(initialValue);
+            const nextValue = placeholder && !options.includes(stringValue) ? '' : stringValue;
+            setValue(nextValue);
+            return;
+        }
         setValue(initialValue);
-    }, [initialValue]);
+    }, [initialValue, options, placeholder, type]);
 
     const handleSave = () => {
+        if (type === 'select' && placeholder && value === '') {
+            setValue(initialValue);
+            setIsEditing(false);
+            return;
+        }
         onSave(value);
         setIsEditing(false);
     };
@@ -49,10 +62,13 @@ export function EditableCell({
                             "bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-emerald-500",
                             inputClassName
                         )}
-                        value={value}
+                        value={String(value ?? '')}
                         onChange={(e) => setValue(e.target.value)}
                         autoFocus
                     >
+                        {placeholder && (
+                            <option value="">{placeholder}</option>
+                        )}
                         {options.map((opt) => (
                             <option key={opt} value={opt}>{opt}</option>
                         ))}
