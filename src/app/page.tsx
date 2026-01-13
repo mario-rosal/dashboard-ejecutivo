@@ -1436,7 +1436,7 @@ export default function DashboardPage() {
               <div className="glass-panel p-6">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                    <LineChart className="text-blue-400" size={16} /> Informe IA (Gemini)
+                    <LineChart className="text-blue-400" size={16} /> Genera tu informe con Inteligencia Artificial
                   </h3>
                   <button
                     onClick={handleGenerateInsight}
