@@ -10,7 +10,24 @@ type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
 type CellValue = string | number | boolean | Date | null | undefined;
 
 const DATE_HEADERS = ['date', 'fecha', 'fecha valor', 'dia', 'f. valor', 'f. operativa'];
-const AMOUNT_HEADERS = ['amount', 'importe', 'monto', 'cantidad', 'saldo', 'debe', 'haber', 'cargo', 'abono', 'ingreso', 'egreso', 'retiro'];
+const AMOUNT_HEADERS = [
+    'amount',
+    'importe',
+    'importe eur',
+    'importe euros',
+    'importe en eur',
+    'importe en euros',
+    'monto',
+    'cantidad',
+    'debe',
+    'haber',
+    'cargo',
+    'abono',
+    'ingreso',
+    'egreso',
+    'retiro',
+];
+const BALANCE_HEADERS = ['saldo', 'balance'];
 const DESC_HEADERS = ['description', 'concepto', 'descripcion', 'descripción', 'detalle', 'movimiento'];
 const CATEGORY_HEADERS = ['category', 'categoria', 'tipo'];
 
@@ -35,6 +52,7 @@ function detectHeaderRow(rows: CellValue[][]) {
             let points = 0;
             if (DATE_HEADERS.includes(h)) points += 2;
             if (AMOUNT_HEADERS.includes(h)) points += 2;
+            if (BALANCE_HEADERS.includes(h)) points += 1;
             if (DESC_HEADERS.includes(h)) points += 1;
             if (CATEGORY_HEADERS.includes(h)) points += 1;
             return acc + points;
@@ -82,16 +100,23 @@ export async function parseFinancialFile(file: File): Promise<TransactionInsert[
                     console.log("First row Raw:", jsonData[0]);
                 }
 
+                const headerKeys = header.filter((key) => key);
+                const findKey = (candidates: string[]) => headerKeys.find((key) => candidates.includes(key));
+                const dateKey = findKey(DATE_HEADERS);
+                const amountKey = findKey(AMOUNT_HEADERS);
+                const balanceKey = findKey(BALANCE_HEADERS);
+                const descKey = findKey(DESC_HEADERS);
+
+                if (!amountKey) {
+                    if (balanceKey) {
+                        throw new Error("No se encontro columna de importe. Se detecto columna de saldo, pero no se usa para importar movimientos.");
+                    }
+                    throw new Error("No se encontro columna de importe. Verifique el archivo.");
+                }
+
                 // Map to our Database Schema
                 const transactions: TransactionInsert[] = jsonData.map((row) => {
-                    // Try to match columns
-                    const keys = Object.keys(row);
-                    const findKey = (candidates: string[]) => keys.find(k => candidates.includes(normalizeHeader(k)));
                     const getCell = (key?: string) => (key ? row[key] : undefined);
-
-                    const dateKey = findKey(DATE_HEADERS);
-                    const amountKey = findKey(AMOUNT_HEADERS);
-                    const descKey = findKey(DESC_HEADERS);
 
                     const amountVal = getCell(amountKey);
 
