@@ -116,6 +116,11 @@ export default function DashboardPage() {
   const [alertSettingsLoading, setAlertSettingsLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [showAllCategories, setShowAllCategories] = useState(false);
+  const [summaryMode, setSummaryMode] = useState<'income' | 'expenses'>('expenses');
+
+  React.useEffect(() => {
+    setShowAllCategories(false);
+  }, [summaryMode]);
 
   const fetchTransactionsForUser = React.useCallback(async (uid: string) => {
     const { data, error } = await supabase
@@ -646,31 +651,27 @@ export default function DashboardPage() {
     return result.length ? result : [{ label: 'Sin datos', value: 0 }];
   }, [transactions]);
 
-  const categorySummary = React.useMemo(() => {
-    const map = new Map<string, { income: number; expense: number }>();
-    const add = (label: string, field: 'income' | 'expense', value: number) => {
-      if (!label || label === 'Sin datos') return;
-      const current = map.get(label) ?? { income: 0, expense: 0 };
-      current[field] += value;
-      map.set(label, current);
-    };
+  const expenseSummary = React.useMemo(() => {
+    return expenseDistribution
+      .filter((item) => item.label !== 'Sin datos' && item.value > 0)
+      .map((item) => ({ label: item.label, value: item.value }))
+      .sort((a, b) => {
+        const diff = b.value - a.value;
+        if (diff !== 0) return diff;
+        return a.label.localeCompare(b.label);
+      });
+  }, [expenseDistribution]);
 
-    incomeDistribution.forEach((item) => add(item.label, 'income', item.value));
-    expenseDistribution.forEach((item) => add(item.label, 'expense', item.value));
-
-    const rows = Array.from(map.entries()).map(([label, totals]) => ({
-      label,
-      income: totals.income,
-      expense: totals.expense,
-      total: totals.income + totals.expense,
-    }));
-
-    return rows.sort((a, b) => {
-      const diff = b.total - a.total;
-      if (diff !== 0) return diff;
-      return a.label.localeCompare(b.label);
-    });
-  }, [incomeDistribution, expenseDistribution]);
+  const incomeSummary = React.useMemo(() => {
+    return incomeDistribution
+      .filter((item) => item.label !== 'Sin datos' && item.value > 0)
+      .map((item) => ({ label: item.label, value: item.value }))
+      .sort((a, b) => {
+        const diff = b.value - a.value;
+        if (diff !== 0) return diff;
+        return a.label.localeCompare(b.label);
+      });
+  }, [incomeDistribution]);
 
   // Calculate MoM Growth (Income based)
   const momGrowth = React.useMemo(() => {
@@ -1469,33 +1470,98 @@ export default function DashboardPage() {
                   <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
                     <Table2 className="text-emerald-400" size={16} /> Resumen por categorias
                   </h3>
+                  <div className="flex gap-1 bg-slate-800/50 p-1 rounded-full border border-white/5">
+                    <button
+                      onClick={() => setSummaryMode('expenses')}
+                      className={`text-[10px] px-3 py-1 rounded-full transition-all ${summaryMode === 'expenses' ? 'bg-red-500/20 text-red-200 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      Gastos
+                    </button>
+                    <button
+                      onClick={() => setSummaryMode('income')}
+                      className={`text-[10px] px-3 py-1 rounded-full transition-all ${summaryMode === 'income' ? 'bg-emerald-500/20 text-emerald-200 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      Ingresos
+                    </button>
+                  </div>
                 </div>
-                {categorySummary.length === 0 ? (
+                {summaryMode === 'expenses' ? (
+                  expenseSummary.length === 0 ? (
+                    <p className="text-sm text-slate-500">Sin datos.</p>
+                  ) : (
+                    (() => {
+                      const summaryRows = expenseSummary;
+                      const totalCategories = summaryRows.reduce((acc, row) => acc + row.value, 0);
+                      const visible = showAllCategories ? summaryRows : summaryRows.slice(0, 10);
+                      const remaining = summaryRows.length - visible.length;
+
+                      return (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 text-[11px] text-slate-500 uppercase tracking-wide px-1">
+                            <span>Categoria</span>
+                            <span className="text-right">Gastos</span>
+                          </div>
+                          <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
+                            {visible.map((row) => {
+                              const percent = totalCategories > 0 ? Math.round((row.value / totalCategories) * 100) : 0;
+                              return (
+                                <div key={row.label} className="grid grid-cols-2 items-center text-sm text-slate-200 px-1">
+                                  <span className="truncate flex items-center gap-2">
+                                    <span className="truncate">{row.label}</span>
+                                    <span className="text-[10px] text-slate-500">{percent}%</span>
+                                  </span>
+                                  <span className="text-right text-red-300">{formatCurrency(row.value)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {remaining > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllCategories(true)}
+                              className="text-[11px] text-blue-300 hover:text-blue-200 transition-colors"
+                            >
+                              Ver mas (+{remaining})
+                            </button>
+                          )}
+                          {showAllCategories && summaryRows.length > 10 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowAllCategories(false)}
+                              className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+                            >
+                              Ver menos
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()
+                  )
+                ) : incomeSummary.length === 0 ? (
                   <p className="text-sm text-slate-500">Sin datos.</p>
                 ) : (
                   (() => {
-                    const totalCategories = categorySummary.reduce((acc, row) => acc + row.total, 0);
-                    const visible = showAllCategories ? categorySummary : categorySummary.slice(0, 10);
-                    const remaining = categorySummary.length - visible.length;
+                    const summaryRows = incomeSummary;
+                    const totalCategories = summaryRows.reduce((acc, row) => acc + row.value, 0);
+                    const visible = showAllCategories ? summaryRows : summaryRows.slice(0, 10);
+                    const remaining = summaryRows.length - visible.length;
 
                     return (
                       <div className="space-y-2">
-                        <div className="grid grid-cols-3 text-[11px] text-slate-500 uppercase tracking-wide px-1">
+                        <div className="grid grid-cols-2 text-[11px] text-slate-500 uppercase tracking-wide px-1">
                           <span>Categoria</span>
-                          <span className="text-right">Gastos</span>
                           <span className="text-right">Ingresos</span>
                         </div>
                         <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
                           {visible.map((row) => {
-                            const percent = totalCategories > 0 ? Math.round((row.total / totalCategories) * 100) : 0;
+                            const percent = totalCategories > 0 ? Math.round((row.value / totalCategories) * 100) : 0;
                             return (
-                              <div key={row.label} className="grid grid-cols-3 items-center text-sm text-slate-200 px-1">
+                              <div key={row.label} className="grid grid-cols-2 items-center text-sm text-slate-200 px-1">
                                 <span className="truncate flex items-center gap-2">
                                   <span className="truncate">{row.label}</span>
                                   <span className="text-[10px] text-slate-500">{percent}%</span>
                                 </span>
-                                <span className="text-right text-red-300">{formatCurrency(row.expense)}</span>
-                                <span className="text-right text-emerald-300">{formatCurrency(row.income)}</span>
+                                <span className="text-right text-emerald-300">{formatCurrency(row.value)}</span>
                               </div>
                             );
                           })}
@@ -1509,7 +1575,7 @@ export default function DashboardPage() {
                             Ver mas (+{remaining})
                           </button>
                         )}
-                        {showAllCategories && categorySummary.length > 10 && (
+                        {showAllCategories && summaryRows.length > 10 && (
                           <button
                             type="button"
                             onClick={() => setShowAllCategories(false)}
