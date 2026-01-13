@@ -115,6 +115,7 @@ export default function DashboardPage() {
   const [alertEvents, setAlertEvents] = useState<AlertEventRow[]>([]);
   const [alertSettingsLoading, setAlertSettingsLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [showAllCategories, setShowAllCategories] = useState(false);
 
   const fetchTransactionsForUser = React.useCallback(async (uid: string) => {
     const { data, error } = await supabase
@@ -644,6 +645,32 @@ export default function DashboardPage() {
     const result = Array.from(map.entries()).map(([label, value]) => ({ label, value }));
     return result.length ? result : [{ label: 'Sin datos', value: 0 }];
   }, [transactions]);
+
+  const categorySummary = React.useMemo(() => {
+    const map = new Map<string, { income: number; expense: number }>();
+    const add = (label: string, field: 'income' | 'expense', value: number) => {
+      if (!label || label === 'Sin datos') return;
+      const current = map.get(label) ?? { income: 0, expense: 0 };
+      current[field] += value;
+      map.set(label, current);
+    };
+
+    incomeDistribution.forEach((item) => add(item.label, 'income', item.value));
+    expenseDistribution.forEach((item) => add(item.label, 'expense', item.value));
+
+    const rows = Array.from(map.entries()).map(([label, totals]) => ({
+      label,
+      income: totals.income,
+      expense: totals.expense,
+      total: totals.income + totals.expense,
+    }));
+
+    return rows.sort((a, b) => {
+      const diff = b.total - a.total;
+      if (diff !== 0) return diff;
+      return a.label.localeCompare(b.label);
+    });
+  }, [incomeDistribution, expenseDistribution]);
 
   // Calculate MoM Growth (Income based)
   const momGrowth = React.useMemo(() => {
@@ -1435,6 +1462,66 @@ export default function DashboardPage() {
                     </p>
                   )}
                 </div>
+              </div>
+
+              <div className="glass-panel p-6">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                    <Table2 className="text-emerald-400" size={16} /> Resumen por categorias
+                  </h3>
+                </div>
+                {categorySummary.length === 0 ? (
+                  <p className="text-sm text-slate-500">Sin datos.</p>
+                ) : (
+                  (() => {
+                    const totalCategories = categorySummary.reduce((acc, row) => acc + row.total, 0);
+                    const visible = showAllCategories ? categorySummary : categorySummary.slice(0, 10);
+                    const remaining = categorySummary.length - visible.length;
+
+                    return (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 text-[11px] text-slate-500 uppercase tracking-wide px-1">
+                          <span>Categoria</span>
+                          <span className="text-right">Gastos</span>
+                          <span className="text-right">Ingresos</span>
+                        </div>
+                        <div className="max-h-[260px] overflow-y-auto pr-1 space-y-2">
+                          {visible.map((row) => {
+                            const percent = totalCategories > 0 ? Math.round((row.total / totalCategories) * 100) : 0;
+                            return (
+                              <div key={row.label} className="grid grid-cols-3 items-center text-sm text-slate-200 px-1">
+                                <span className="truncate flex items-center gap-2">
+                                  <span className="truncate">{row.label}</span>
+                                  <span className="text-[10px] text-slate-500">{percent}%</span>
+                                </span>
+                                <span className="text-right text-red-300">{formatCurrency(row.expense)}</span>
+                                <span className="text-right text-emerald-300">{formatCurrency(row.income)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {remaining > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllCategories(true)}
+                            className="text-[11px] text-blue-300 hover:text-blue-200 transition-colors"
+                          >
+                            Ver mas (+{remaining})
+                          </button>
+                        )}
+                        {showAllCategories && categorySummary.length > 10 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllCategories(false)}
+                            className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
+                          >
+                            Ver menos
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()
+                )}
               </div>
             </div>
           )}

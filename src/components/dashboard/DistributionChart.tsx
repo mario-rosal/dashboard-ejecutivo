@@ -15,18 +15,23 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
     const [mode, setMode] = useState<'income' | 'expenses'>('expenses');
 
     const currentData = mode === 'income' ? incomeData : expenseData;
-    const total = currentData.reduce((acc, curr) => acc + curr.value, 0);
+    const sortedData = [...currentData].sort((a, b) => {
+        const diff = b.value - a.value;
+        if (diff !== 0) return diff;
+        return a.label.localeCompare(b.label);
+    });
+    const total = sortedData.reduce((acc, curr) => acc + curr.value, 0);
 
     // Reference palette
     const colors = [
         '#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#ec4899', '#6366f1'
     ];
 
-    const chartColors = currentData.map((_, index) => colors[index % colors.length]);
+    const chartColors = sortedData.map((_, index) => colors[index % colors.length]);
     const chartData = {
-        labels: currentData.map(d => d.label),
+        labels: sortedData.map(d => d.label),
         datasets: [{
-            data: currentData.map(d => d.value),
+            data: sortedData.map(d => d.value),
             backgroundColor: chartColors,
             borderColor: '#18181b', // Card background color
             borderWidth: 2,
@@ -34,8 +39,8 @@ export function DistributionChart({ incomeData, expenseData }: DistributionChart
     };
 
     const maxLegendItems = 6;
-    const legendItems = currentData.slice(0, maxLegendItems);
-    const remainingCount = currentData.length - legendItems.length;
+    const legendItems = sortedData.slice(0, maxLegendItems);
+    const remainingCount = sortedData.length - legendItems.length;
 
     const options: ChartOptions<'doughnut'> = {
         responsive: true,
